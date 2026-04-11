@@ -11,11 +11,11 @@ _Todas as variantes encontraram o documento relevante no top-5._
 
 | # | Query (trunc.) | Relevant ID |
 |---|---|---|
-| 1 | SINOPSE DA PRIMEIRA EDIÇÃO1 Se você gosta de viagens lá e de volta, para fora do… | `O-Hobbit-J-R-R--Tolkien-p13-c00` |
-| 2 | o Sr. Bilbo Bolseiro visitou várias pessoas notáveis; conversou com o dragão Sma… | `O-Hobbit-J-R-R--Tolkien-p13-c03` |
-| 3 | PREFÁCIO1 O Hobbit foi publicado pela primeira vez em 21 de setembro de 1937.… | `O-Hobbit-J-R-R--Tolkien-p14-c00` |
-| 4 | mas é bem possível que “a primeira cópia rabiscada que não foi além do primeiro … | `O-Hobbit-J-R-R--Tolkien-p15-c04` |
-| 5 | Allen & Unwin Ltda. e, depois de um monte de correspondências, eles resolveram p… | `O-Hobbit-J-R-R--Tolkien-p15-c07` |
+| 1 | distortion in their geometric structure.… | `2504-19874v1-p01-c01` |
+| 2 | least distortion achievable by block source codes, now known as vector quan- tiz… | `2504-19874v1-p02-c01` |
+| 3 | latency. This latency is primarily attributed to communication bottlenecks betwe… | `2504-19874v1-p02-c03` |
+| 4 | cache, the size of which scales with both model size (number of layers and atten… | `2504-19874v1-p02-c05` |
+| 5 | computation, making them unsuitable for real-time AI applications like KV cache … | `2504-19874v1-p02-c09` |
 
 ---
 
@@ -25,8 +25,8 @@ _f32 achou em top-5, turbo_mse_4bit não achou._
 
 | # | Query (trunc.) | Relevant ID | Rank f32 | Rank mse_4 |
 |---|---|---|---|---|
-| 1 | em cima do outro. Mais anãos, quatro mais! E lá estava Gandalf atrás deles, apoi… | `O-Hobbit-J-R-R--Tolkien-p35-c02` | 5 | 15 |
-| 2 | navios, navegar para outras costas!… | `O-Hobbit-J-R-R--Tolkien-p31-c04` | 1 | 10 |
+| 1 | eliminating the need for preprocessing.… | `2504-19874v1-p04-c09` | 4 | 6 |
+| 2 | do not explicitly provide a query set.… | `2504-19874v1-p19-c07` | 5 | 6 |
 
 ---
 
@@ -34,18 +34,18 @@ _f32 achou em top-5, turbo_mse_4bit não achou._
 
 | Variante | Hit@1 | Hit@5 | Hit@10 | Not Found | Mediana Rank |
 |---|---|---|---|---|---|
-| baseline f32 32 | 166/200 (83.0%) | 188/200 (94.0%) | 189/200 (94.5%) | 4/200 (2.0%) | 1.0 |
-| turbo mse 4 | 168/200 (84.0%) | 186/200 (93.0%) | 188/200 (94.0%) | 5/200 (2.5%) | 1.0 |
-| turbo mse 2 | 155/200 (77.5%) | 180/200 (90.0%) | 187/200 (93.5%) | 7/200 (3.5%) | 1.0 |
-| turbo prod 4 | 162/200 (81.0%) | 182/200 (91.0%) | 188/200 (94.0%) | 5/200 (2.5%) | 1.0 |
-| uniform 2 | 6/200 (3.0%) | 21/200 (10.5%) | 24/200 (12.0%) | 163/200 (81.5%) | 5.0 |
+| baseline f32 32 | 159/200 (79.5%) | 179/200 (89.5%) | 187/200 (93.5%) | 6/200 (3.0%) | 1.0 |
+| turbo mse 4 | 159/200 (79.5%) | 178/200 (89.0%) | 185/200 (92.5%) | 6/200 (3.0%) | 1.0 |
+| turbo mse 2 | 145/200 (72.5%) | 179/200 (89.5%) | 185/200 (92.5%) | 5/200 (2.5%) | 1.0 |
+| turbo prod 4 | 151/200 (75.5%) | 177/200 (88.5%) | 183/200 (91.5%) | 5/200 (2.5%) | 1.0 |
+| uniform 2 | 31/200 (15.5%) | 64/200 (32.0%) | 85/200 (42.5%) | 54/200 (27.0%) | 7.0 |
 
 ---
 
 ## Padrões observados
 
-- **turbo_mse 4-bit** retém **99.5%** do Recall@10 do float32 usando apenas **1/8 da memória** (~7.9× compressão).
-- **uniform 2-bit** retém apenas **12.7%** do Recall@10 — compressão agressiva sem rotação destrói a qualidade.
+- **turbo_mse 4-bit** retém **98.9%** do Recall@10 do float32 usando apenas **1/8 da memória** (~7.9× compressão).
+- **uniform 2-bit** retém apenas **45.5%** do Recall@10 — compressão agressiva sem rotação destrói a qualidade.
 - **turbo_mse 2-bit** ainda retém **98.9%** do Recall@10 com 15× compressão — demonstra a robustez da rotação ortogonal.
 
 ---

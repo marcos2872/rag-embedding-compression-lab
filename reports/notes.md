@@ -7,7 +7,7 @@
 
 ## Resultados chave
 
-- **Sweet spot:** `turbo_mse_8-bit` — 4.0× compressão, Recall@10=0.945 (Δ=+0.000 vs f32)
+- **Sweet spot:** `turbo_prod_8-bit` — 4.0× compressão, Recall@10=0.935 (Δ=+0.000 vs f32)
 
 ## Próximos passos
 - [ ] Fase 7: demo RAG interativo (`make rag-demo`)
