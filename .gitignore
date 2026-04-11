@@ -31,11 +31,6 @@ data/corpus.jsonl
 data/queries.jsonl
 # data/raw/ é trackeado — contém os documentos de amostra do lab
 
-# ── Gráficos e dashboard (reproduzíveis via make visualize) ──────────────────
-charts/*.png
-charts/dashboard.html
-!charts/.gitkeep
-
 # ── Relatórios CSV (reproduzíveis via make all-bench) ────────────────────────
 reports/benchmark_results.csv
 reports/distortion_results.csv

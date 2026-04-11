@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Embedding Compression Lab — Dashboard</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f0f2f5;
+  color: #2c3e50;
+  line-height: 1.6;
+}
+
+/* ── Header ───────────────────────────────────────── */
+header {
+  background: linear-gradient(135deg, #1a252f 0%, #2c3e50 60%, #34495e 100%);
+  color: white;
+  padding: 28px 40px 20px;
+}
+header h1 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+}
+header p {
+  color: #bdc3c7;
+  font-size: 0.9rem;
+}
+.header-chips {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.chip {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  color: #ecf0f1;
+}
+
+/* ── Summary Cards ────────────────────────────────── */
+.summary-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  padding: 20px 40px;
+  background: #e8ecf0;
+  border-bottom: 1px solid #d5dde5;
+}
+.summary-card {
+  background: white;
+  border-radius: 10px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  border-left: 4px solid var(--accent, #4878CF);
+}
+.summary-card .label { font-size: 0.75rem; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.summary-card .value { font-size: 1.6rem; font-weight: 700; color: var(--accent, #4878CF); margin: 2px 0; }
+.summary-card .sub   { font-size: 0.78rem; color: #95a5a6; }
+
+/* ── Nav ──────────────────────────────────────────── */
+nav {
+  background: white;
+  border-bottom: 1px solid #e0e4e8;
+  padding: 0 40px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+nav ul {
+  display: flex;
+  list-style: none;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+nav ul::-webkit-scrollbar { display: none; }
+nav a {
+  display: block;
+  padding: 14px 18px;
+  text-decoration: none;
+  color: #7f8c8d;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+  transition: color .2s, border-color .2s;
+}
+nav a:hover { color: #2c3e50; border-color: #bdc3c7; }
+
+/* ── Main content ─────────────────────────────────── */
+main { padding: 24px 40px 60px; max-width: 1400px; margin: 0 auto; }
+
+/* ── Section ──────────────────────────────────────── */
+.chart-section {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  margin-bottom: 32px;
+  overflow: hidden;
+}
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid #f0f2f5;
+  flex-wrap: wrap;
+}
+.section-icon { font-size: 1.5rem; }
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #2c3e50;
+  flex: 1;
+}
+.badge {
+  padding: 3px 11px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ── Description cards ────────────────────────────── */
+.desc-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-bottom: 1px solid #f0f2f5;
+}
+@media (max-width: 860px) {
+  .desc-grid { grid-template-columns: 1fr; }
+}
+.desc-card {
+  padding: 16px 22px;
+  border-right: 1px solid #f0f2f5;
+  font-size: 0.85rem;
+  color: #4a5568;
+}
+.desc-card:last-child { border-right: none; }
+.desc-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 7px;
+  color: #2c3e50;
+}
+.desc-card.what   { background: #fafbff; }
+.desc-card.how    { background: #fffaf5; }
+.desc-card.impact { background: #f5fff8; }
+
+/* ── Chart wrapper ────────────────────────────────── */
+.chart-wrap { padding: 12px 16px 4px; }
+/* ── Legend cards ────────────────────────────────── */
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 4px;
+}
+.legend-card {
+  border: 1.5px solid #e8ecf0;
+  border-left: 4px solid var(--lc, #ccc);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fafbfc;
+}
+.lc-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.lc-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--lc, #ccc);
+  flex-shrink: 0;
+}
+.lc-name {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .88rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+.lc-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: .7rem;
+  font-weight: 600;
+}
+.lc-body {
+  font-size: .83rem;
+  color: #4a5568;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+.lc-formula {
+  font-size: .75rem;
+  color: #7f8c8d;
+  background: #f0f2f5;
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+/* ── Bits cards ─────────────────────────────────────── */
+.bits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+.bits-card {
+  border: 1.5px solid #e8ecf0;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fafbfc;
+}
+.bits-card.highlight { border-color: #d0dff5; background: #f7faff; }
+.bits-card.sweet      { border-color: #b7e4c7; background: #f0fdf4; }
+.bits-val {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #2c3e50;
+  line-height: 1;
+}
+.bits-label { font-size: .78rem; color: #7f8c8d; margin: 3px 0 8px; }
+.bits-bar {
+  height: 6px;
+  background: #e8ecf0;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.bits-fill { height: 100%; border-radius: 3px; }
+.bits-desc { font-size: .8rem; color: #4a5568; line-height: 1.5; }
+
+/* ── Pipeline row ─────────────────────────────────── */
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.pipe-step {
+  border: 2px solid var(--pc, #ccc);
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: center;
+  min-width: 100px;
+  background: #fafbfc;
+}
+.pipe-icon { font-size: 1.1rem; margin-bottom: 3px; }
+.pipe-name {
+  font-family: monospace;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--pc, #333);
+}
+.pipe-desc { font-size: .73rem; color: #7f8c8d; margin-top: 3px; line-height: 1.4; }
+.pipe-arrow { color: #bdc3c7; font-size: 1.1rem; text-align: center; flex-shrink: 0; }
+.pipe-arrow span { font-size: .7rem; color: #7f8c8d; display: block; line-height: 1.3; }
+
+
+
+/* ── Footer ───────────────────────────────────────── */
+footer {
+  text-align: center;
+  color: #95a5a6;
+  font-size: 0.8rem;
+  padding: 20px;
+  border-top: 1px solid #e0e4e8;
+  background: white;
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <h1>📊 RAG Embedding Compression Lab — Dashboard</h1>
+  <p>Análise completa do impacto da quantização de embeddings na qualidade de retrieval</p>
+  <div class="header-chips">
+    <span class="chip">📄 14 configurações analisadas</span>
+    <span class="chip">🤖 Modelo: BAAI/bge-small-en-v1.5 (dim=384)</span>
+    <span class="chip">4 variantes × 3 bits</span>
+    <span class="chip">TurboQuant</span>
+  </div>
+</header>
+
+<!-- ── Summary Bar ─────────────────────────────────────── -->
+<div class="summary-bar">
+  <div class="summary-card" style="--accent:#27ae60">
+    <div class="label">Sweet Spot</div>
+    <div class="value" style="font-size:1.15rem">lloyd_max 4-bit</div>
+    <div class="sub">7.9× compressão, Recall@10 ≈ float32</div>
+  </div>
+  <div class="summary-card" style="--accent:#2980b9">
+    <div class="label">Baseline float32</div>
+    <div class="value">0.945</div>
+    <div class="sub">Recall@10 de referência</div>
+  </div>
+  <div class="summary-card" style="--accent:#e74c3c">
+    <div class="label">Uniform 2-bit R@10</div>
+    <div class="value">0.120</div>
+    <div class="sub">Sem rotação = colapso de qualidade</div>
+  </div>
+  <div class="summary-card" style="--accent:#8e44ad">
+    <div class="label">Métrica principal</div>
+    <div class="value">Recall@10</div>
+    <div class="sub">Fração de queries com relevante no top-10</div>
+  </div>
+</div>
+
+<!-- ── Nav ─────────────────────────────────────────────── -->
+<nav>
+  <ul>
+    <li><a href="#legend" style="color:#2980b9;font-weight:600">📖 Legenda</a></li>
+    <li><a href="#overview">📋 Tabela</a></li>
+    <li><a href="#recall_line">📈 Recall vs Bits</a></li>
+    <li><a href="#tradeoff">⭐ Trade-off</a></li>
+    <li><a href="#mse">📐 MSE</a></li>
+    <li><a href="#heatmap">🌡️ IP Heatmap</a></li>
+    <li><a href="#compression">🗜️ Compressão</a></li>
+  </ul>
+</nav>
+
+<!-- ── Main ────────────────────────────────────────────── -->
+<main>
+
+<section id="legend" class="chart-section" style="margin-bottom:32px">
+  <div class="section-header">
+    <span class="section-icon">📖</span>
+    <h2 class="section-title">Guia de Leitura — Variantes e Níveis de Bits</h2>
+    <span class="badge" style="background:#2980b9">glossário</span>
+  </div>
+
+  <!-- Variantes -->
+  <div style="padding:20px 24px 8px">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px">
+      Variantes de Quantização
+    </h3>
+    <div class="legend-grid">
+
+      <div class="legend-card" style="--lc:#333333">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">baseline_f32</span>
+          <span class="lc-badge" style="background:#e8f4fd;color:#2980b9">refer&ecirc;ncia</span>
+        </div>
+        <div class="lc-body">
+          <b>Embeddings originais em float32</b> (32 bits por valor).
+          Nenhuma compressão aplicada. Serve como teto de qualidade:
+          todos os resultados são comparados contra este baseline.
+        </div>
+        <div class="lc-formula">1 vetor &times; dim &times; <b>4 bytes</b> = 1536 B (dim=384)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#888888">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">baseline_f16</span>
+          <span class="lc-badge" style="background:#f5f5f5;color:#555">compress&atilde;o simples</span>
+        </div>
+        <div class="lc-body">
+          <b>Float16 (meia precis&atilde;o)</b>: divide cada valor de 32 bits para 16 bits
+          simplesmente reduzindo a precis&atilde;o num&eacute;rica. Sem transformação do vetor.
+          Compressão de <b>2&times;</b> com perda mínima de qualidade.
+        </div>
+        <div class="lc-formula">1 vetor &times; dim &times; <b>2 bytes</b> = 768 B</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#4878CF">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">uniform</span>
+          <span class="lc-badge" style="background:#eef3fb;color:#4878CF">baseline quantização</span>
+        </div>
+        <div class="lc-body">
+          <b>Quantização escalar uniforme</b>: divide o intervalo [min, max] de todos
+          os valores em 2<sup>bits</sup> &minus; 1 bins de largura igual, e armazena o
+          índice de cada bin. <em>N&atilde;o aplica rotação</em>. M&eacute;todo mais simples, serve
+          como baseline para comparar com os m&eacute;todos mais avan&ccedil;ados.
+        </div>
+        <div class="lc-formula">bins uniformes &bull; sem rota&ccedil;&atilde;o &bull; dados-dependente (min/max global)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#6ACC65">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">lloyd_max</span>
+          <span class="lc-badge" style="background:#eefbee;color:#27ae60">codebook &oacute;timo</span>
+        </div>
+        <div class="lc-body">
+          <b>Codebook Lloyd-Max</b>: em vez de bins uniformes, calcula os
+          2<sup>bits</sup> centroides que minimizam o MSE para a distribuição
+          teórica das coordenadas de um vetor unitário em S<sup>d-1</sup>
+          (distribuição Beta concentrada em torno de zero).
+          <em>N&atilde;o aplica rotação</em>, por isso o codebook funciona mal sem ela
+          — a distribuição real não corresponde à teórica.
+        </div>
+        <div class="lc-formula">bins &oacute;timos (Lloyd-Max) &bull; sem rota&ccedil;&atilde;o &bull; dados-independente</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#D65F5F">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">turbo_mse</span>
+          <span class="lc-badge" style="background:#fdf0f0;color:#c0392b">TurboQuant MSE</span>
+        </div>
+        <div class="lc-body">
+          <b>TurboQuantMSE</b> (paper TurboQuant): aplica uma <b>rotação ortogonal
+          aleatória</b> ao vetor antes de quantizar. A rotação equaliza a energia
+          entre todas as dimens&otilde;es, fazendo com que cada coordenada siga
+          <em>exatamente</em> a distribuição teórica do codebook Lloyd-Max.
+          Resultado: mesmo codebook, qualidade <em>muito</em> superior ao lloyd_max puro.
+        </div>
+        <div class="lc-formula"><b>rotação Q</b> + codebook Lloyd-Max &bull; dados-independente &bull; reconstruç&atilde;o: Q<sup>T</sup> &times; dequant(idx)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#B47CC7">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">turbo_prod</span>
+          <span class="lc-badge" style="background:#f9f0fd;color:#8e44ad">TurboQuant Prod</span>
+        </div>
+        <div class="lc-body">
+          <b>TurboQuantProd</b>: extens&atilde;o do MSE que adiciona um segundo passo de
+          compress&atilde;o do <em>resíduo</em> usando <b>QJL</b>
+          (Johnson-Lindenstrauss Quantizado). Usa (b-1) bits para a parte MSE
+          e 1 bit por dimens&atilde;o para o resíduo (sinal de uma projeç&atilde;o gaussiana).
+          Elimina o vi&eacute;s de produto interno que o TurboQuantMSE introduz,
+          produzindo estimativas de similaridade mais precisas.
+        </div>
+        <div class="lc-formula">rotaç&atilde;o Q + Lloyd-Max(<b>b-1</b> bits) + QJL resíduo(<b>1</b> bit) &bull; vi&eacute;s &asymp; 0</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bits -->
+  <div style="padding:16px 24px 20px;border-top:1px solid #f0f2f5">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px">
+      Níveis de Bits — O que significa cada valor
+    </h3>
+    <div class="bits-grid">
+
+      <div class="bits-card">
+        <div class="bits-val">32</div>
+        <div class="bits-label">Float32 (baseline)</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:100%;background:#333"></div></div>
+        <div class="bits-desc">
+          Representação padrão de ponto flutuante (IEEE 754).
+          <b>1536 bytes/vetor</b> para dim=384. Precisão total,
+          sem nenhuma compressão. Baseline de referência.
+        </div>
+      </div>
+
+      <div class="bits-card">
+        <div class="bits-val">16</div>
+        <div class="bits-label">Float16 (baseline)</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:50%;background:#888"></div></div>
+        <div class="bits-desc">
+          Meia precisão. <b>768 bytes/vetor</b> (2&times; menor).
+          Trunca mantissa de 23 para 10 bits. Perda de qualidade
+          mínima. Compressão trivial sem algoritmo especial.
+        </div>
+      </div>
+
+      <div class="bits-card highlight">
+        <div class="bits-val">8</div>
+        <div class="bits-label">8-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:25%;background:#D65F5F"></div></div>
+        <div class="bits-desc">
+          256 níveis possíveis por dimensão.
+          <b>386 bytes/vetor</b> (4&times; menor).
+          Qualidade próxima do float32 para todos os métodos.
+          Ponto de entrada conservador para produção.
+        </div>
+      </div>
+
+      <div class="bits-card highlight sweet">
+        <div class="bits-val">4</div>
+        <div class="bits-label">4-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:12.5%;background:#27ae60"></div></div>
+        <div class="bits-desc">
+          16 níveis possíveis por dimensão.
+          <b>194 bytes/vetor</b> (8&times; menor).
+          <span style="color:#27ae60;font-weight:700">Sweet spot do paper TurboQuant</span>:
+          TurboQuantMSE 4-bit mantém qualidade igual ao float32
+          com 8&times; menos memória.
+        </div>
+      </div>
+
+      <div class="bits-card">
+        <div class="bits-val">2</div>
+        <div class="bits-label">2-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:6.25%;background:#e67e22"></div></div>
+        <div class="bits-desc">
+          4 níveis possíveis por dimensão.
+          <b>98 bytes/vetor</b> (16&times; menor).
+          Compressão extrema: <em>uniform 2-bit</em> colapsa
+          (Recall@10 cai >40pp). TurboQuantMSE aguenta
+          com perda &lt;2pp gra&ccedil;as &agrave; rotação ortogonal.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Como os métodos se comparam -->
+  <div style="padding:0 24px 20px;border-top:1px solid #f0f2f5">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin:16px 0 14px;text-transform:uppercase;letter-spacing:.5px">
+      Relação entre os Métodos
+    </h3>
+    <div class="pipeline-row">
+      <div class="pipe-step" style="--pc:#4878CF">
+        <div class="pipe-icon">①</div>
+        <div class="pipe-name">uniform</div>
+        <div class="pipe-desc">bins iguais<br>sem rotação</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ codebook<br>&oacute;timo</span></div>
+      <div class="pipe-step" style="--pc:#6ACC65">
+        <div class="pipe-icon">②</div>
+        <div class="pipe-name">lloyd_max</div>
+        <div class="pipe-desc">bins &oacute;timos<br>sem rotação</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ rotação<br>ortogonal</span></div>
+      <div class="pipe-step" style="--pc:#D65F5F">
+        <div class="pipe-icon">③</div>
+        <div class="pipe-name">turbo_mse</div>
+        <div class="pipe-desc">rotação +<br>bins &oacute;timos</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ QJL<br>resíduo</span></div>
+      <div class="pipe-step" style="--pc:#B47CC7">
+        <div class="pipe-icon">④</div>
+        <div class="pipe-name">turbo_prod</div>
+        <div class="pipe-desc">rotação +<br>bins + QJL</div>
+      </div>
+    </div>
+    <p style="font-size:.82rem;color:#7f8c8d;margin-top:10px;padding:0 4px">
+      Cada seta adiciona um componente do paper TurboQuant.
+      A rotação ortogonal (②→③) &eacute; o insight mais importante:
+      aumenta o Cosine Sim médio de ~0.79 para ~0.98 no 4-bit
+      sem alterar a taxa de compressão.
+    </p>
+  </div>
+
+</section>
+
+
+<section id="overview" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">📋</span>
+    <h2 class="section-title">Tabela de Resultados Completos</h2>
+    <span class="badge" style="background:#6c757d">referência</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Consolida em uma única tabela todas as métricas de benchmark de retrieval (Recall@k, MRR, latência, tamanho em MB, compressão) e de distorção (MSE, Cosine Error, IP Bias) para cada variante × bits.</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body">Cada linha é uma variante. As colunas de retrieval (R@1, R@5, R@10, MRR) devem ser o mais altas possível; as de distorção (MSE, IP Bias) o mais baixas possível. A coluna <b>Compr.</b> indica quantas vezes menos memória a variante usa vs. float32.</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">Use esta tabela como referência rápida para escolher a variante ideal para o seu caso de uso. Procure linhas com alta compressão E alto Recall@10.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+        <script charset="utf-8" src="https://cdn.plot.ly/plotly-3.5.0.min.js" integrity="sha256-fHbNLP+GlIXN+efbQec78UkemUz3NJp7UmfGxC1tNxs=" crossorigin="anonymous"></script>                <div id="ddf3d135-b044-4661-b56e-faea9a85736c" class="plotly-graph-div" style="height:520px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("ddf3d135-b044-4661-b56e-faea9a85736c")) {                    Plotly.newPlot(                        "ddf3d135-b044-4661-b56e-faea9a85736c",                        [{"cells":{"align":"center","fill":{"color":[["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"],["rgba(51,51,51,0.08)","rgba(136,136,136,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(72,120,207,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(106,204,101,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(214,95,95,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)","rgba(180,124,199,0.08)"]]},"font":{"size":10},"height":28,"values":[["baseline_f32","baseline_f16","uniform","uniform","uniform","lloyd_max","lloyd_max","lloyd_max","turbo_mse","turbo_mse","turbo_mse","turbo_prod","turbo_prod","turbo_prod"],["32","16","8","4","2","8","4","2","8","4","2","8","4","2"],["0.8300","0.8300","0.8300","0.7600","0.0300","0.8200","0.7950","0.7900","0.8250","0.8400","0.7750","0.8200","0.8100","0.6350"],["0.9400","0.9400","0.9400","0.8550","0.1050","0.9250","0.9300","0.9200","0.9400","0.9300","0.9000","0.9400","0.9100","0.8250"],["0.9450","0.9450","0.9450","0.9050","0.1200","0.9500","0.9400","0.9300","0.9450","0.9400","0.9350","0.9500","0.9400","0.8600"],["0.8842","0.8842","0.8856","0.8129","0.0639","0.8694","0.8575","0.8433","0.8818","0.8859","0.8287","0.8807","0.8618","0.7216"],["0.0191","0.0190","0.0189","0.0198","0.0237","0.0190","0.0197","0.0206","0.0189","0.0199","0.0189","0.0192","0.0191","0.0189"],["3.1787","1.5894","0.7988","0.4015","0.2028","0.7988","0.4015","0.2028","0.7988","0.4015","0.2028","0.8030","0.4056","0.2069"],["1.0000","2.0000","3.9800","7.9200","15.6700","3.9800","7.9200","15.6700","3.9800","7.9200","15.6700","3.9600","7.8400","15.3600"],["—","—","0.0000","0.0003","0.0059","0.0002","0.0004","0.0009","0.0000","0.0000","0.0003","0.0000","0.0001","0.0015"],["—","—","0.0002","0.0562","0.5907","0.0383","0.0764","0.1857","0.0001","0.0047","0.0605","0.0002","0.0258","0.2023"],["—","—","0.0000","-0.0013","-0.1382","-0.1696","-0.2389","-0.3433","-0.0002","-0.0070","-0.0860","0.0000","0.0011","-0.0010"]]},"columnwidth":[120,45,55,55,55,60,55,75,65,75,85,75],"header":{"align":"center","fill":{"color":"#2c3e50"},"font":{"color":"white","size":11},"height":32,"values":["Variante","Bits","R@1","R@5","R@10","MRR","ms\u002fq","MB(vetor)","Compr.","MSE","Cosine Err","IP Bias"]},"type":"table"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"margin":{"l":0,"r":0,"t":10,"b":0},"height":520},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+
+<section id="recall_line" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">📈</span>
+    <h2 class="section-title">Recall@10 vs Bits — Quanto a qualidade cai ao comprimir?</h2>
+    <span class="badge" style="background:#d65f5f">insight chave</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Mostra como o Recall@10 de cada variante varia conforme reduzimos o número de bits de 8 para 2. As linhas tracejadas marcam os baselines float32 e float16.</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body"><b>Eixo X</b>: bits por dimensão (8→4→2). <b>Eixo Y</b>: Recall@10 (0 = nenhum resultado correto, 1 = todos corretos). Linhas mais altas = melhor qualidade para o mesmo nível de compressão. Passe o mouse sobre os pontos para ver os valores exatos.</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body"><b>TurboQuantMSE a 4-bit</b> mantém Recall@10 igual ou superior ao float32 com 8× menos memória — o sweet spot do paper TurboQuant. <b>Uniform a 2-bit</b> colapsa: a rotação aleatória antes da quantização é o que diferencia os métodos.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                            <div id="41bcedc6-72af-4273-926a-d65d8e66d4c5" class="plotly-graph-div" style="height:400px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("41bcedc6-72af-4273-926a-d65d8e66d4c5")) {                    Plotly.newPlot(                        "41bcedc6-72af-4273-926a-d65d8e66d4c5",                        [{"hovertemplate":"\u003cb\u003eUniform\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#4878CF","width":2.5},"marker":{"size":9},"mode":"lines+markers","name":"Uniform","x":{"dtype":"i1","bdata":"AgQI"},"y":{"dtype":"f8","bdata":"uB6F61G4vj\u002f2KFyPwvXsPz0K16NwPe4\u002f"},"type":"scatter"},{"hovertemplate":"\u003cb\u003eLloyd-Max\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#6ACC65","width":2.5},"marker":{"size":9},"mode":"lines+markers","name":"Lloyd-Max","x":{"dtype":"i1","bdata":"AgQI"},"y":{"dtype":"f8","bdata":"w\u002fUoXI\u002fC7T8UrkfhehTuP2ZmZmZmZu4\u002f"},"type":"scatter"},{"hovertemplate":"\u003cb\u003eTurboQuantMSE\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#D65F5F","width":2.5},"marker":{"size":9},"mode":"lines+markers","name":"TurboQuantMSE","x":{"dtype":"i1","bdata":"AgQI"},"y":{"dtype":"f8","bdata":"7FG4HoXr7T8UrkfhehTuPz0K16NwPe4\u002f"},"type":"scatter"},{"hovertemplate":"\u003cb\u003eTurboQuantProd\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#B47CC7","width":2.5},"marker":{"size":9},"mode":"lines+markers","name":"TurboQuantProd","x":{"dtype":"i1","bdata":"AgQI"},"y":{"dtype":"f8","bdata":"hetRuB6F6z8UrkfhehTuP2ZmZmZmZu4\u002f"},"type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"shapes":[{"line":{"color":"#333333","dash":"dash"},"type":"line","x0":0,"x1":1,"xref":"x domain","y0":0.945,"y1":0.945,"yref":"y"},{"line":{"color":"#888888","dash":"dash"},"type":"line","x0":0,"x1":1,"xref":"x domain","y0":0.945,"y1":0.945,"yref":"y"}],"annotations":[{"font":{"color":"#333333"},"showarrow":false,"text":"  float32 (0.945)","x":1,"xanchor":"left","xref":"x domain","y":0.945,"yanchor":"middle","yref":"y"},{"font":{"color":"#888888"},"showarrow":false,"text":"  float16 (0.945)","x":1,"xanchor":"left","xref":"x domain","y":0.945,"yanchor":"middle","yref":"y"}],"xaxis":{"title":{"text":"Bits por dimensão"},"tickvals":[2,4,8],"ticktext":["2-bit","4-bit","8-bit"],"showgrid":true,"gridcolor":"#eeeeee"},"yaxis":{"title":{"text":"Recall@10"},"range":[0,1.08],"showgrid":true,"gridcolor":"#eeeeee"},"legend":{"x":0.01,"y":0.05,"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#dddddd","borderwidth":1},"margin":{"l":60,"r":80,"t":20,"b":50},"plot_bgcolor":"white","height":400},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+
+<section id="tradeoff" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">⭐</span>
+    <h2 class="section-title">Trade-off: Qualidade × Memória — O gráfico mais importante</h2>
+    <span class="badge" style="background:#e67e22">mais importante</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Scatter plot onde cada ponto é uma configuração (variante + bits). Mostra simultaneamente a qualidade de retrieval e o custo de memória. A linha laranja é a <b>fronteira de Pareto</b>: pontos onde não é possível melhorar qualidade sem aumentar memória.</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body"><b>Eixo X (log)</b>: quanto menor, mais economia de memória. <b>Eixo Y</b>: Recall@10 — quanto maior, melhor. O ponto ideal está no canto <b>superior esquerdo</b>. Pontos na fronteira de Pareto são as melhores escolhas possíveis. Passe o mouse para ver a taxa de compressão exata.</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">Pontos TurboQuantMSE ficam acima de Uniform e Lloyd-Max para a mesma posição horizontal, provando que a rotação ortogonal é essencial. <b>turbo_mse 4-bit é o sweet spot</b>: 7.9× compressão sem perda de qualidade.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                            <div id="84d79199-cceb-431c-a733-e52f9ce313b5" class="plotly-graph-div" style="height:480px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("84d79199-cceb-431c-a733-e52f9ce313b5")) {                    Plotly.newPlot(                        "84d79199-cceb-431c-a733-e52f9ce313b5",                        [{"customdata":{"dtype":"f8","bdata":"AAAAAAAA8D8="},"hovertemplate":"\u003cb\u003efloat32\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#333333","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"3AA="},"symbol":"circle"},"mode":"markers+text","name":"float32","text":["float32"],"textfont":{"color":"#333333","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"klz+Q\u002fptCUA="},"y":{"dtype":"f8","bdata":"PQrXo3A97j8="},"type":"scatter"},{"customdata":{"dtype":"f8","bdata":"AAAAAAAAAEA="},"hovertemplate":"\u003cb\u003efloat16\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#888888","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"3AA="},"symbol":"circle"},"mode":"markers+text","name":"float16","text":["float16"],"textfont":{"color":"#888888","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"yjLEsS5u+T8="},"y":{"dtype":"f8","bdata":"PQrXo3A97j8="},"type":"scatter"},{"customdata":{"dtype":"f8","bdata":"16NwPQrXD0CuR+F6FK4fQNejcD0KVy9A"},"hovertemplate":"\u003cb\u003eUniform\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#4878CF","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"zACEAGAA"},"symbol":"circle"},"mode":"markers+text","name":"Uniform","text":["8b","4b","2b"],"textfont":{"color":"#4878CF","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"AG+BBMWP6T8ZBFYOLbLZP4V80LNZ9ck\u002f"},"y":{"dtype":"f8","bdata":"PQrXo3A97j\u002f2KFyPwvXsP7gehetRuL4\u002f"},"type":"scatter"},{"customdata":{"dtype":"f8","bdata":"16NwPQrXD0CuR+F6FK4fQNejcD0KVy9A"},"hovertemplate":"\u003cb\u003eLloyd-Max\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#6ACC65","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"zACEAGAA"},"symbol":"circle"},"mode":"markers+text","name":"Lloyd-Max","text":["8b","4b","2b"],"textfont":{"color":"#6ACC65","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"AG+BBMWP6T8ZBFYOLbLZP4V80LNZ9ck\u002f"},"y":{"dtype":"f8","bdata":"ZmZmZmZm7j8UrkfhehTuP8P1KFyPwu0\u002f"},"type":"scatter"},{"customdata":{"dtype":"f8","bdata":"16NwPQrXD0CuR+F6FK4fQNejcD0KVy9A"},"hovertemplate":"\u003cb\u003eTurboQuantMSE\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#D65F5F","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"zACEAGAA"},"symbol":"circle"},"mode":"markers+text","name":"TurboQuantMSE","text":["8b","4b","2b"],"textfont":{"color":"#D65F5F","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"AG+BBMWP6T8ZBFYOLbLZP4V80LNZ9ck\u002f"},"y":{"dtype":"f8","bdata":"PQrXo3A97j8UrkfhehTuP+xRuB6F6+0\u002f"},"type":"scatter"},{"customdata":{"dtype":"f8","bdata":"rkfhehSuD0Bcj8L1KFwfQLgehetRuC5A"},"hovertemplate":"\u003cb\u003eTurboQuantProd\u003c\u002fb\u003e\u003cbr\u003eMemória: \u003cb\u003e%{x:.3f} MB\u003c\u002fb\u003e\u003cbr\u003eRecall@10: \u003cb\u003e%{y:.3f}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{customdata:.1f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#B47CC7","line":{"color":"white","width":1.5},"size":{"dtype":"i2","bdata":"zACEAGAA"},"symbol":"circle"},"mode":"markers+text","name":"TurboQuantProd","text":["8b","4b","2b"],"textfont":{"color":"#B47CC7","size":10},"textposition":"top right","x":{"dtype":"f8","bdata":"GQRWDi2y6T+FfNCzWfXZP11txf6ye8o\u002f"},"y":{"dtype":"f8","bdata":"ZmZmZmZm7j8UrkfhehTuP4XrUbgehes\u002f"},"type":"scatter"},{"hoverinfo":"skip","line":{"color":"#e67e22","dash":"dash","width":2.5},"mode":"lines","name":"Fronteira de Pareto","x":[0.2028,0.2028,0.2028,0.4015,0.7988,0.7988],"y":[0.12,0.93,0.935,0.94,0.945,0.95],"type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"title":{"text":"Tamanho dos embeddings (MB) — escala log"},"type":"log","showgrid":true,"gridcolor":"#eeeeee"},"yaxis":{"title":{"text":"Recall@10"},"range":[0,1.12],"showgrid":true,"gridcolor":"#eeeeee"},"legend":{"x":0.01,"y":0.01,"bgcolor":"rgba(255,255,255,0.85)","bordercolor":"#ddd","borderwidth":1},"margin":{"l":60,"r":40,"t":20,"b":60},"plot_bgcolor":"white","height":480},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+
+<section id="mse" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">📐</span>
+    <h2 class="section-title">MSE por Variante — Distorção Geométrica dos Vetores</h2>
+    <span class="badge" style="background:#4878cf">distorção geométrica</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Mede o erro quadrático médio (MSE) entre os vetores originais float32 e os vetores reconstruídos após quantização + dequantização. Indica o quanto a geometria do espaço de embeddings é distorcida.</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body"><b>Eixo Y em escala log</b>: valores menores = menos distorção. Cada grupo de barras representa um nível de bits (8→4→2). Barras mais baixas dentro do mesmo grupo = variante mais fiel ao original. Hover para ver o valor exato.</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">Lloyd-Max sem rotação tem MSE alto apesar de usar o mesmo codebook que TurboQuantMSE. Isso confirma que o <b>codebook ótimo sozinho não basta</b> — a rotação é necessária para que a distribuição das coordenadas corresponda ao codebook teórico.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                            <div id="634744ec-a073-4b07-8a4a-89a951a1165d" class="plotly-graph-div" style="height:400px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("634744ec-a073-4b07-8a4a-89a951a1165d")) {                    Plotly.newPlot(                        "634744ec-a073-4b07-8a4a-89a951a1165d",                        [{"hovertemplate":"\u003cb\u003eUniform\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eMSE: \u003cb\u003e%{y:.8f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#4878CF","line":{"color":"white","width":1}},"name":"Uniform","x":["8-bit","4-bit","2-bit"],"y":{"dtype":"f8","bdata":"grhhynZ0sj4Ud93XWPQ0P+WyE1YRC3g\u002f"},"type":"bar"},{"hovertemplate":"\u003cb\u003eLloyd-Max\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eMSE: \u003cb\u003e%{y:.8f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#6ACC65","line":{"color":"white","width":1}},"name":"Lloyd-Max","x":["8-bit","4-bit","2-bit"],"y":{"dtype":"f8","bdata":"7beXsA1HLT8ads4F5AE7P0b\u002fkQrf0kw\u002f"},"type":"bar"},{"hovertemplate":"\u003cb\u003eTurboQuantMSE\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eMSE: \u003cb\u003e%{y:.8f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#D65F5F","line":{"color":"white","width":1}},"name":"TurboQuantMSE","x":["8-bit","4-bit","2-bit"],"y":{"dtype":"f8","bdata":"s3rqBV3Kkj4iHVhtgpj5PhYC0mEyEzQ\u002f"},"type":"bar"},{"hovertemplate":"\u003cb\u003eTurboQuantProd\u003c\u002fb\u003e\u003cbr\u003eBits: %{x}\u003cbr\u003eMSE: \u003cb\u003e%{y:.8f}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":"#B47CC7","line":{"color":"white","width":1}},"name":"TurboQuantProd","x":["8-bit","4-bit","2-bit"],"y":{"dtype":"f8","bdata":"y9uuI1D1sj63jnk2DmkiP\u002fOi4VoOcFg\u002f"},"type":"bar"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"title":{"text":"Bits por dimensão"},"showgrid":false},"yaxis":{"title":{"text":"MSE (escala log)"},"type":"log","showgrid":true,"gridcolor":"#eeeeee"},"legend":{"x":0.01,"y":0.99,"bgcolor":"rgba(255,255,255,0.8)","bordercolor":"#ddd","borderwidth":1},"margin":{"l":60,"r":20,"t":20,"b":50},"barmode":"group","plot_bgcolor":"white","height":400},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+
+<section id="heatmap" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">🌡️</span>
+    <h2 class="section-title">Heatmap de Erros de Produto Interno</h2>
+    <span class="badge" style="background:#6acc65">viés de produto interno</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Mede três tipos de erro no produto interno (dot product) entre queries e documentos: <b>IP Bias</b> (viés sistemático), <b>IP MAE</b> (magnitude média do erro) e <b>IP Variance</b> (consistência do erro).</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body"><b>Verde</b> = erro baixo (bom). <b>Vermelho</b> = erro alto (ruim). Cada coluna é uma variante+bits. As células mostram o valor real. O <b>IP Bias</b> é especialmente importante: um viés alto significa que os scores de similaridade são sistematicamente errados.</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body"><b>Lloyd-Max tem IP Bias altíssimo</b> (−0.13 a 8-bit) pois o codebook recorta coordenadas grandes, criando viés. <b>TurboQuantMSE elimina esse viés</b> com a rotação. <b>TurboQuantProd vai além</b>: o QJL corrige o viés residual do MSE, mantendo IP Bias próximo de zero em todos os bits.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                            <div id="fb87e32d-51a4-4674-a097-1cbaae7f1858" class="plotly-graph-div" style="height:320px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("fb87e32d-51a4-4674-a097-1cbaae7f1858")) {                    Plotly.newPlot(                        "fb87e32d-51a4-4674-a097-1cbaae7f1858",                        [{"colorbar":{"ticktext":["Baixo","Médio","Alto"],"tickvals":[0,0.5,1],"title":{"text":"Intensidade"}},"colorscale":[[0.0,"rgb(0,104,55)"],[0.1,"rgb(26,152,80)"],[0.2,"rgb(102,189,99)"],[0.3,"rgb(166,217,106)"],[0.4,"rgb(217,239,139)"],[0.5,"rgb(255,255,191)"],[0.6,"rgb(254,224,139)"],[0.7,"rgb(253,174,97)"],[0.8,"rgb(244,109,67)"],[0.9,"rgb(215,48,39)"],[1.0,"rgb(165,0,38)"]],"hovertemplate":"Métrica: %{y}\u003cbr\u003eVariante: %{x}\u003cbr\u003eValor: \u003cb\u003e%{text}\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","showscale":true,"text":[["-0.16964","-0.23888","-0.34325","-0.00023","-0.00697","-0.08602","0.00000","0.00113","-0.00096","0.00002","-0.00129","-0.13823"],["0.16964","0.23888","0.34325","0.00083","0.00788","0.08602","0.00082","0.00901","0.02413","0.00082","0.01408","0.13858"],["0.00047","0.00056","0.00080","0.00000","0.00004","0.00028","0.00000","0.00013","0.00092","0.00000","0.00031","0.00324"]],"textfont":{"size":9},"texttemplate":"\u003cb\u003e%{text}\u003c\u002fb\u003e","x":["lloyd_max_8b","lloyd_max_4b","lloyd_max_2b","turbo_mse_8b","turbo_mse_4b","turbo_mse_2b","turbo_prod_8b","turbo_prod_4b","turbo_prod_2b","uniform_8b","uniform_4b","uniform_2b"],"y":["IP Bias\u003cbr\u003e(viés sistemático)","IP MAE\u003cbr\u003e(magnitude do erro)","IP Variance\u003cbr\u003e(consistência)"],"z":{"dtype":"f8","bdata":"w2CZm6ch4D+bB1XiimXTPwAAAAAAAAAA6B4hUY3f7z+2mRSBOT\u002fvP5ouoLfe5uc\u002fx4nr1BLl7z8AAAAAAADwP6QqRApDzu8\u002fEpnBUJjl7z\u002f6P6XOVcbvP24ayF0EDeM\u002f0SHJr5CN3z+644oOED\u002fmPwAAAAAAAPA\u002fE7ma0BGX+z44lLSPTBuVPzfoKJ3e2M8\u002fooki4lB\u002fuD5K6Ar6iXqYP57TL8J2bLE\u002fAAAAAAAAAABRx2qCr9OjPwV1DwNZv9k\u002fpWf0VAxnwj\u002fgIaruYgHGP0WSXpYodc8\u002fAAAAAAAAAADaqAavZ06KPzrJWMXp6bU\u002fAAAAAAAAAAA\u002f8cG0HMSjP0HPUOjCJ9I\u002fAAAAAAAAAADkOz6U+lm4PwAAAAAAAPA\u002f","shape":"3, 12"},"type":"heatmap"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"tickangle":-30,"side":"bottom"},"yaxis":{"autorange":"reversed"},"margin":{"l":200,"r":80,"t":20,"b":80},"height":320,"plot_bgcolor":"white"},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+
+<section id="compression" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">🗜️</span>
+    <h2 class="section-title">Compressão × Perda de Recall — Identificando o Sweet Spot</h2>
+    <span class="badge" style="background:#b47cc7">decisão de produção</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">Gráfico dual-axis: as <b>barras</b> mostram a taxa de compressão de memória (quanto menor o embedding, maior a barra); a <b>linha</b> mostra a queda no Recall@10 em pontos percentuais em relação ao baseline float32.</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body"><b>Barras altas</b> = muita compressão (bom). <b>Linha próxima de zero</b> = pouca perda de qualidade (bom). O sweet spot é onde a barra é alta E a linha está perto de zero. Anotações em vermelho destacam quedas severas (>5pp).</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">Qualquer variante com <b>queda < 1pp e compressão > 7×</b> é um candidato viável para produção. Compressão agressiva (2-bit) sem rotação causa quedas de 40+ pp — inutilizável. Com rotação (TurboQuantMSE 2-bit), a queda é < 2pp.</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div>                            <div id="457c00c8-8b44-454a-919c-6fc682deb315" class="plotly-graph-div" style="height:450px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("457c00c8-8b44-454a-919c-6fc682deb315")) {                    Plotly.newPlot(                        "457c00c8-8b44-454a-919c-6fc682deb315",                        [{"hovertemplate":"\u003cb\u003e%{x}\u003c\u002fb\u003e\u003cbr\u003eCompressão: \u003cb\u003e%{y:.2f}×\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","marker":{"color":["#6ACC65","#6ACC65","#6ACC65","#D65F5F","#D65F5F","#D65F5F","#B47CC7","#B47CC7","#B47CC7","#4878CF","#4878CF","#4878CF"],"line":{"color":"white","width":1}},"name":"Compressão (×)","opacity":0.8,"x":["lloyd_max_8b","lloyd_max_4b","lloyd_max_2b","turbo_mse_8b","turbo_mse_4b","turbo_mse_2b","turbo_prod_8b","turbo_prod_4b","turbo_prod_2b","uniform_8b","uniform_4b","uniform_2b"],"y":{"dtype":"f8","bdata":"16NwPQrXD0CuR+F6FK4fQNejcD0KVy9A16NwPQrXD0CuR+F6FK4fQNejcD0KVy9ArkfhehSuD0Bcj8L1KFwfQLgehetRuC5A16NwPQrXD0CuR+F6FK4fQNejcD0KVy9A"},"type":"bar","xaxis":"x","yaxis":"y"},{"hovertemplate":"\u003cb\u003e%{x}\u003c\u002fb\u003e\u003cbr\u003eQueda: \u003cb\u003e%{y:.2f} pp\u003c\u002fb\u003e\u003cbr\u003e\u003cextra\u003e\u003c\u002fextra\u003e","line":{"color":"#2c3e50","width":2.5},"marker":{"color":["#27ae60","#27ae60","#e67e22","#27ae60","#27ae60","#27ae60","#27ae60","#27ae60","#e74c3c","#27ae60","#e67e22","#e74c3c"],"line":{"color":"white","width":1},"size":9},"mode":"lines+markers","name":"Queda Recall@10 (pp)","x":["lloyd_max_8b","lloyd_max_4b","lloyd_max_2b","turbo_mse_8b","turbo_mse_4b","turbo_mse_2b","turbo_prod_8b","turbo_prod_4b","turbo_prod_2b","uniform_8b","uniform_4b","uniform_2b"],"y":{"dtype":"f8","bdata":"BAAAAAAA4L8EAAAAAADgP9T\u002f\u002f\u002f\u002f\u002f\u002f\u002fc\u002fAAAAAAAAAAAEAAAAAADgP6T\u002f\u002f\u002f\u002f\u002f\u002f+8\u002fBAAAAAAA4L8EAAAAAADgP\u002f7\u002f\u002f\u002f\u002f\u002f\u002fyBAAAAAAAAAAADv\u002f\u002f\u002f\u002f\u002f\u002f8PQAAAAAAAoFRA"},"type":"scatter","xaxis":"x","yaxis":"y2"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,0.94],"showgrid":false,"tickangle":-30},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"Taxa de compressão (×)"},"showgrid":true,"gridcolor":"#eeeeee"},"yaxis2":{"anchor":"x","overlaying":"y","side":"right","title":{"text":"Queda no Recall@10 (pp)"}},"annotations":[{"arrowcolor":"#e74c3c","arrowhead":2,"ay":-30,"font":{"color":"#e74c3c","family":"monospace","size":9},"showarrow":true,"text":"−8.5pp","x":"turbo_prod_2b","y":8.499999999999996,"yref":"y2"},{"arrowcolor":"#e74c3c","arrowhead":2,"ay":-30,"font":{"color":"#e74c3c","family":"monospace","size":9},"showarrow":true,"text":"−82.5pp","x":"uniform_2b","y":82.5,"yref":"y2"},{"font":{"color":"#27ae60"},"showarrow":false,"text":"sem perda","x":1,"xanchor":"left","xref":"x domain","y":0,"yanchor":"middle","yref":"y"}],"shapes":[{"line":{"color":"#27ae60","dash":"dot","width":1.5},"type":"line","x0":0,"x1":1,"xref":"x domain","y0":0,"y1":0,"yref":"y2"}],"legend":{"x":0.01,"y":0.99,"bgcolor":"rgba(255,255,255,0.85)","bordercolor":"#ddd","borderwidth":1},"margin":{"l":60,"r":80,"t":20,"b":80},"plot_bgcolor":"white","height":450},                        {"responsive": true}                    )                };            </script>        </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ── Footer ──────────────────────────────────────────── -->
+<footer>
+  RAG Embedding Compression Lab &nbsp;·&nbsp; Gerado por <code>make visualize</code>
+  &nbsp;·&nbsp; Baseado no paper TurboQuant
+</footer>
+
+</body>
+</html>
