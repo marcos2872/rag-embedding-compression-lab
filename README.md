@@ -314,7 +314,7 @@ cat HOWTO.md
 
 ## Referências
 
-- **TurboQuant** — *Near-Lossless Quantization for Embedding Vectors* (referência base deste lab)
+- **TurboQuant** — [*TurboQuant: Redefining AI Efficiency with Extreme Compression*](https://research.google/blog/turboquant-redefining-ai-efficiency-with-extreme-compression/) (Google Research Blog) — referência base deste lab
 - [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5) — modelo de embedding usado
 - [FAISS](https://github.com/facebookresearch/faiss) — biblioteca de busca vetorial (IndexFlatIP)
 - [sentence-transformers](https://www.sbert.net/) — inferência de embeddings
