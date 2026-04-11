@@ -22,9 +22,8 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 import yaml
@@ -138,14 +137,16 @@ def queries(
       pseudo          Usa top-1 f32 como ground truth (requer embeddings, Fase 2+).
     """
     from src.ingest import load_corpus
-
     corpus_docs = load_corpus(corpus)
     console.print(f"[cyan]Corpus carregado:[/cyan] {len(corpus_docs)} chunks\n")
 
+    from src.ingest import queries_first_sentence, queries_pseudo
+
     if strategy == "first_sentence":
-        pairs = _queries_first_sentence(corpus_docs, max_queries)
+        pairs = queries_first_sentence(corpus_docs, max_queries)
     elif strategy == "pseudo":
-        pairs = _queries_pseudo(corpus_docs, topk, max_queries)
+        seed = int(os.getenv("RANDOM_SEED", "42"))
+        pairs = queries_pseudo(corpus_docs, topk, max_queries, console, seed)
     else:
         console.print(f"[red]Estratégia desconhecida: {strategy}[/red]")
         raise typer.Exit(1)
@@ -169,106 +170,6 @@ def queries(
     console.print(table)
 
 
-def _queries_first_sentence(corpus: list[dict], max_queries: int) -> list[dict]:
-    """
-    Para cada chunk, extrai a primeira frase (ou primeiras N palavras)
-    como query e marca aquele chunk como relevante.
-    Filtra queries duplicadas ou muito curtas.
-    """
-    import re
-
-    seen: set[str] = set()
-    pairs: list[dict] = []
-
-    for doc in corpus:
-        text = doc["text"]
-        # Extrai primeira sentença (split por . ? !)
-        sentences = re.split(r"(?<=[.?!])\s+", text.strip())
-        first = sentences[0].strip() if sentences else ""
-
-        # Limpa a query: remove listas, tabelas, código
-        first = re.sub(r"[|`#*─┼┤├]", " ", first)
-        first = re.sub(r"\s+", " ", first).strip()
-
-        # Descarta queries muito curtas ou que já existem
-        words = first.split()
-        if len(words) < 5:
-            # Tenta usar as primeiras 15 palavras do chunk
-            first = " ".join(doc["text"].split()[:15])
-            if len(first.split()) < 5:
-                continue
-
-        query = first[:200]  # trunca para evitar queries enormes
-
-        if query.lower() in seen:
-            continue
-        seen.add(query.lower())
-
-        pairs.append({"query": query, "relevant_ids": [doc["id"]]})
-
-        if len(pairs) >= max_queries:
-            break
-
-    return pairs
-
-
-def _queries_pseudo(corpus: list[dict], topk: int, max_queries: int) -> list[dict]:
-    """
-    Estratégia pseudo ground truth: usa embedding f32 + top-k para
-    determinar documentos relevantes. Requer Phase 2 (embeddings gerados).
-    """
-    import numpy as np
-
-    emb_path = Path("embeddings/baseline_f32.npy")
-    if not emb_path.exists():
-        console.print(
-            "[yellow]⚠ embeddings/baseline_f32.npy não encontrado.[/yellow]\n"
-            "  Execute [bold]make embed[/bold] (Fase 2) antes de usar --strategy pseudo.\n"
-            "  Usando estratégia 'first_sentence' como fallback."
-        )
-        return _queries_first_sentence(corpus, max_queries)
-
-    try:
-        import faiss
-    except ImportError:
-        console.print(
-            "[yellow]⚠ faiss-cpu não instalado. Usando 'first_sentence' como fallback.[/yellow]"
-        )
-        return _queries_first_sentence(corpus, max_queries)
-
-    embeddings = np.load(str(emb_path)).astype("float32")
-    n, dim = embeddings.shape
-    console.print(f"[cyan]Embeddings carregados:[/cyan] shape={embeddings.shape}")
-
-    # Constrói índice temporário
-    index = faiss.IndexFlatIP(dim)
-    index.add(embeddings)
-
-    # Amostra aleatória de chunks como queries
-    rng = np.random.default_rng(int(os.getenv("RANDOM_SEED", 42)))
-    num_q = min(max_queries, n)
-    query_indices = rng.choice(n, size=num_q, replace=False)
-
-    pairs: list[dict] = []
-    for qi in query_indices:
-        query_vec = embeddings[qi : qi + 1]
-        _, I = index.search(query_vec, topk + 1)
-        # Remove o próprio chunk (ele retorna rank 0)
-        relevant = [
-            corpus[j]["id"]
-            for j in I[0]
-            if j != qi and 0 <= j < len(corpus)
-        ][:topk]
-        if not relevant:
-            relevant = [corpus[qi]["id"]]
-
-        pairs.append({
-            "query": corpus[qi]["text"][:200],
-            "relevant_ids": relevant,
-        })
-
-    return pairs
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FASE 2 — Embeddings (stub — implementado na Fase 2)
@@ -277,7 +178,7 @@ def _queries_pseudo(corpus: list[dict], topk: int, max_queries: int) -> list[dic
 @app.command()
 def embed(
     device: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--device", help="cpu | cuda | mps | rocm"),
     ] = None,
 ) -> None:
@@ -338,8 +239,8 @@ def retrieval_bench(
 @app.command()
 def visualize() -> None:
     """Gera todos os 8 gráficos estáticos + dashboard.html (Fase 6)."""
-    from src.visualization.plots import generate_all_plots
     from src.visualization.dashboard import generate_dashboard
+    from src.visualization.plots import generate_all_plots
     generate_all_plots()
     console.print()
     generate_dashboard()
@@ -365,11 +266,11 @@ def rag_demo(
     ] = "f32,turbo_mse_4bit,uniform_2bit",
     k: Annotated[int, typer.Option("--k", help="Número de documentos a recuperar")] = 5,
     backend: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--backend", help="LLM backend: mock | ollama | openai"),
     ] = None,
     model: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--model", help="Nome do modelo LLM"),
     ] = None,
 ) -> None:

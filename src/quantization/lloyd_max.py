@@ -26,8 +26,8 @@ Variante B vs C (TurboQuantMSE):
 from __future__ import annotations
 
 import numpy as np
-from scipy.stats import beta as beta_dist
 from rich.console import Console
+from scipy.stats import beta as beta_dist
 
 console = Console()
 
@@ -110,7 +110,8 @@ def lloyd_max_codebook(
     # Inicializa centróides pelos quantis
     centroids = _init_centroids_from_quantiles(xs, pdf, K).astype(np.float64)
 
-    prev = np.empty_like(centroids)
+    prev  = np.empty_like(centroids)
+    delta = float("inf")   # inicializa antes do loop (evita NameError no bloco else)
 
     for iteration in range(num_iters):
         prev[:] = centroids

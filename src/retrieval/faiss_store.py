@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import faiss
+import numpy as np
 from rich.console import Console
 from rich.progress import track
 
@@ -48,35 +48,8 @@ def load_index(path: str | Path) -> faiss.Index:
 
 def _load_variant_embeddings(variant: str, bits: int) -> np.ndarray | None:
     """Carrega e dequantiza uma variante. Retorna None se arquivo não existir."""
-    path = Path(f"embeddings/{variant}_{bits}bit.npz")
-    if not path.exists():
-        return None
-
-    if variant == "uniform":
-        from src.quantization.storage import load_uniform
-        from src.quantization.scalar_uniform import dequantize_uniform
-        idx, norms, state = load_uniform(path)
-        return dequantize_uniform(idx, state)
-
-    if variant == "lloyd_max":
-        from src.quantization.storage import load_lloyd
-        from src.quantization.lloyd_max import dequantize_lloyd
-        idx, norms, cb = load_lloyd(path)
-        return dequantize_lloyd(idx, cb)
-
-    if variant == "turbo_mse":
-        from src.quantization.storage import load_turbo_mse
-        from src.quantization.turboquant_mse import dequantize_mse_batch
-        idx, norms, state = load_turbo_mse(path)
-        return dequantize_mse_batch(idx, norms, state)
-
-    if variant == "turbo_prod":
-        from src.quantization.storage import load_turbo_prod
-        from src.quantization.turboquant_prod import dequantize_prod_batch
-        idx, norms, signs, gammas, state = load_turbo_prod(path)
-        return dequantize_prod_batch(idx, norms, signs, gammas, state)
-
-    return None
+    from src.quantization.loader import load_and_dequantize
+    return load_and_dequantize(variant, bits)
 
 
 # ── Build all ──────────────────────────────────────────────────────────────────
@@ -122,4 +95,4 @@ def build_all_indexes() -> None:
             f"{index.ntotal} vetores  {size_kb:.0f} KB"
         )
 
-    console.print(f"\n[bold green]✓ Índices prontos em indexes/[/bold green]")
+    console.print("\n[bold green]✓ Índices prontos em indexes/[/bold green]")

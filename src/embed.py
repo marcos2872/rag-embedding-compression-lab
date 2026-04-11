@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import yaml
@@ -53,7 +52,7 @@ def _embedding_cfg() -> dict:
 
 # ── Detecção de device ─────────────────────────────────────────────────────────
 
-def detect_device(preferred: Optional[str] = None) -> str:
+def detect_device(preferred: str | None = None) -> str:
     """
     Detecta o melhor device disponível.
 
@@ -130,7 +129,7 @@ def detect_device(preferred: Optional[str] = None) -> str:
 def load_model(
     model_name: str,
     device: str,
-    cache_dir: Optional[str] = None,
+    cache_dir: str | None = None,
 ):
     """
     Carrega um SentenceTransformer.
@@ -140,8 +139,8 @@ def load_model(
     """
     try:
         from sentence_transformers import SentenceTransformer
-    except ImportError:
-        raise ImportError("Execute: uv sync  (sentence-transformers não instalado)")
+    except ImportError as exc:
+        raise ImportError("Execute: uv sync  (sentence-transformers não instalado)") from exc
 
     console.print(f"[cyan]Modelo:[/cyan]  {model_name}")
     console.print(f"[cyan]Device:[/cyan]  {device}")
@@ -281,7 +280,7 @@ def load_embeddings(path: str | Path) -> np.ndarray:
 
 # ── Pipeline principal ─────────────────────────────────────────────────────────
 
-def embed_pipeline(device: Optional[str] = None) -> None:
+def embed_pipeline(device: str | None = None) -> None:
     """
     Pipeline completo da Fase 2:
       1. Detecta device
@@ -341,9 +340,9 @@ def _print_report(X: np.ndarray, model_name: str, device: str) -> None:
     table.add_row("embeddings/baseline_f16.npy", f"[{n}, {d}]", "float16", f"{f16_mb:.2f} MB", "2×")
 
     console.print(table)
-    console.print(f"\n[bold green]✓ Fase 2 concluída.[/bold green]")
+    console.print("\n[bold green]✓ Fase 2 concluída.[/bold green]")
     console.print(f"  Modelo : {model_name}")
     console.print(f"  Device : {device}")
     console.print(f"  Vetores: {n}  |  Dimensão: {d}")
-    console.print(f"\n  Próximo passo: [bold]make queries-pseudo[/bold]  (ground truth com top-1 f32)")
-    console.print(f"  Ou:            [bold]make quantize-all[/bold]   (Fase 3)\n")
+    console.print("\n  Próximo passo: [bold]make queries-pseudo[/bold]  (ground truth com top-1 f32)")
+    console.print("  Ou:            [bold]make quantize-all[/bold]   (Fase 3)\n")

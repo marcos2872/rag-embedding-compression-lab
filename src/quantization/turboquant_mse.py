@@ -17,13 +17,12 @@ Diferença vs Variante B (lloyd_max sem rotação):
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 import numpy as np
 
-from src.quantization.rotation import fit_rotation, apply_rotation, apply_inverse_rotation
-from src.quantization.lloyd_max import get_codebook, quantize_lloyd, dequantize_lloyd
+from src.quantization.lloyd_max import dequantize_lloyd, get_codebook, quantize_lloyd
+from src.quantization.rotation import apply_inverse_rotation, apply_rotation, fit_rotation
 
 
 @dataclass

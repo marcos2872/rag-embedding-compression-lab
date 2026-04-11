@@ -11,7 +11,7 @@ Métricas de qualidade de retrieval.
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import numpy as np
 
@@ -31,7 +31,7 @@ def recall_at_k(
     if not retrieved:
         return 0.0
     hits = sum(
-        1 for ret, rel in zip(retrieved, relevant)
+        1 for ret, rel in zip(retrieved, relevant, strict=True)
         if set(ret[:k]) & set(rel)
     )
     return hits / len(retrieved)
@@ -50,7 +50,7 @@ def mrr(
     if not retrieved:
         return 0.0
     rr_sum = 0.0
-    for ret, rel in zip(retrieved, relevant):
+    for ret, rel in zip(retrieved, relevant, strict=True):
         rel_set = set(rel)
         for rank, doc_id in enumerate(ret, start=1):
             if doc_id in rel_set:

@@ -12,7 +12,6 @@ Por que por palavras e não tokens?
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 
 def _clean_text(text: str) -> str:

@@ -70,17 +70,20 @@ def _theoretical_bytes_per_vector(variant: str, bits: int, D: int) -> int:
 
 
 def _quick_metrics(X_orig: np.ndarray, X_hat: np.ndarray) -> tuple[float, float]:
-    """Retorna (MSE, cosine_sim_médio)."""
-    mse    = float(np.mean((X_orig - X_hat) ** 2))
-    # Para vetores normalizados: cosine ≈ dot product
-    cosine = float(np.mean(np.einsum("ij,ij->i", X_orig, X_hat)))
+    """Retorna (MSE, cosine_sim_médio). Cosine sim é calculado com normalização explícita."""
+    mse = float(np.mean((X_orig - X_hat) ** 2))
+    # Cosine sim correto: normaliza X_hat antes do produto interno
+    # X_orig já é unitário; X_hat pode ter norma ≠ 1 (ex: turbo_prod via QJL)
+    norms_hat = np.linalg.norm(X_hat, axis=1, keepdims=True)
+    norms_hat_safe = np.where(norms_hat == 0, 1.0, norms_hat)
+    cosine = float(np.mean(np.einsum("ij,ij->i", X_orig, X_hat / norms_hat_safe)))
     return mse, cosine
 
 
 # ── Variante A — Uniform ───────────────────────────────────────────────────────
 
 def _run_uniform(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
-    from src.quantization.scalar_uniform import fit_uniform, quantize_uniform, dequantize_uniform
+    from src.quantization.scalar_uniform import dequantize_uniform, fit_uniform, quantize_uniform
     from src.quantization.storage import save_uniform
 
     state   = fit_uniform(X, bits)
@@ -95,7 +98,7 @@ def _run_uniform(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
 # ── Variante B — Lloyd-Max ─────────────────────────────────────────────────────
 
 def _run_lloyd_max(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
-    from src.quantization.lloyd_max import get_codebook, quantize_lloyd, dequantize_lloyd
+    from src.quantization.lloyd_max import dequantize_lloyd, get_codebook, quantize_lloyd
     from src.quantization.storage import save_lloyd
 
     dim      = X.shape[1]
@@ -111,10 +114,14 @@ def _run_lloyd_max(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
 # ── Variante C — TurboQuantMSE ────────────────────────────────────────────────
 
 def _run_turbo_mse(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
-    from src.quantization.turboquant_mse import fit_turbo_mse, quantize_mse_batch, dequantize_mse_batch
     from src.quantization.storage import save_turbo_mse
+    from src.quantization.turboquant_mse import (
+        dequantize_mse_batch,
+        fit_turbo_mse,
+        quantize_mse_batch,
+    )
 
-    seed  = int(os.getenv("RANDOM_SEED", 42))
+    seed  = int(os.getenv("RANDOM_SEED", "42"))
     state = fit_turbo_mse(X.shape[1], bits, seed)
 
     indices = quantize_mse_batch(X, state)
@@ -128,11 +135,15 @@ def _run_turbo_mse(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
 # ── Variante D — TurboQuantProd ───────────────────────────────────────────────
 
 def _run_turbo_prod(X: np.ndarray, norms: np.ndarray, bits: int) -> Path:
-    from src.quantization.turboquant_prod import fit_turbo_prod, quantize_prod_batch, dequantize_prod_batch
     from src.quantization.storage import save_turbo_prod
+    from src.quantization.turboquant_prod import (
+        dequantize_prod_batch,
+        fit_turbo_prod,
+        quantize_prod_batch,
+    )
 
-    seed     = int(os.getenv("RANDOM_SEED",  42))
-    qjl_seed = int(os.getenv("QJL_SEED",    123))
+    seed     = int(os.getenv("RANDOM_SEED",  "42"))
+    qjl_seed = int(os.getenv("QJL_SEED",    "123"))
     state    = fit_turbo_prod(X.shape[1], bits, seed, qjl_seed)
 
     mse_indices, signs, gammas = quantize_prod_batch(X, state)
@@ -197,7 +208,7 @@ def quantize_pipeline(variant: str, bits: int) -> None:
     table.add_row("Tamanho arquivo",     f"{file_kb:.1f} KB",     f"(f32={f32_kb:.1f} KB, inclui R/S)")
     table.add_row("Bytes/vetor (dados)", f"{vec_bytes} B",        f"(f32={D*4} B)")
     table.add_row("Compressão (vetor)",  f"{ratio_vec:.2f}×",     "dados por vetor, sem overhead")
-    table.add_row("Compressão (arquivo)",f"{ratio_file:.2f}×",    "arquivo total (N=556 é pequeno)")
+    table.add_row("Compressão (arquivo)",f"{ratio_file:.2f}×",    f"arquivo total (N={N} é pequeno)")
     table.add_row("MSE",                 f"{mse:.6f}",            "↓ melhor")
     table.add_row("Cosine sim médio",    f"{cosine:.6f}",         "↑ melhor (máx=1.0)")
     table.add_row("Tempo",              f"{elapsed:.1f}s",        "")

@@ -17,7 +17,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 # ── Bit packing ────────────────────────────────────────────────────────────────
 
 def pack_indices(indices_2d: np.ndarray, bits: int) -> np.ndarray:
@@ -102,7 +101,7 @@ def save_uniform(
 def load_uniform(path: str | Path):
     """Retorna (indices [N,D], norms [N], UniformState)."""
     from src.quantization.scalar_uniform import UniformState
-    data = np.load(str(path), allow_pickle=True)
+    data = np.load(str(path))
     bits = int(data["bits"])
     dim  = int(data["dim"])
     state = UniformState(
@@ -141,7 +140,7 @@ def save_lloyd(
 
 def load_lloyd(path: str | Path):
     """Retorna (indices [N,D], norms [N], codebook [K])."""
-    data     = np.load(str(path), allow_pickle=True)
+    data     = np.load(str(path))
     bits     = int(data["bits"])
     dim      = int(data["dim"])
     indices  = unpack_indices(data["indices_packed"], bits, dim)
@@ -176,7 +175,7 @@ def save_turbo_mse(
 def load_turbo_mse(path: str | Path):
     """Retorna (indices [N,D], norms [N], TurboMSEState)."""
     from src.quantization.turboquant_mse import TurboMSEState
-    data  = np.load(str(path), allow_pickle=True)
+    data  = np.load(str(path))
     bits  = int(data["bits"])
     dim   = int(data["dim"])
     state = TurboMSEState(
@@ -225,7 +224,7 @@ def save_turbo_prod(
 def load_turbo_prod(path: str | Path):
     """Retorna (mse_indices|None, mse_norms, signs, gammas, TurboProdState)."""
     from src.quantization.turboquant_prod import TurboProdState
-    data     = np.load(str(path), allow_pickle=True)
+    data     = np.load(str(path))
     bits     = int(data["bits"])
     mse_bits = int(data["mse_bits"])
     dim      = int(data["dim"])

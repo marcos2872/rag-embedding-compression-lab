@@ -1,0 +1,983 @@
+"""
+src/visualization/_dashboard_html.py
+---------------------------------------
+Geração do HTML final do dashboard: constantes de template e função _write_html.
+Importado por src/visualization/dashboard.py.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+CHART_META = [
+    {
+        "id":    "overview",
+        "icon":  "📋",
+        "title": "Tabela de Resultados Completos",
+        "what":  "Consolida em uma única tabela todas as métricas de benchmark de retrieval "
+                 "(Recall@k, MRR, latência, tamanho em MB, compressão) e de distorção "
+                 "(MSE, Cosine Error, IP Bias) para cada variante × bits.",
+        "how":   "Cada linha é uma variante. As colunas de retrieval (R@1, R@5, R@10, MRR) "
+                 "devem ser o mais altas possível; as de distorção (MSE, IP Bias) o mais "
+                 "baixas possível. A coluna <b>Compr.</b> indica quantas vezes menos memória "
+                 "a variante usa vs. float32.",
+        "impact":"Use esta tabela como referência rápida para escolher a variante ideal para "
+                 "o seu caso de uso. Procure linhas com alta compressão E alto Recall@10.",
+        "badge": "referência",
+        "badge_color": "#6c757d",
+    },
+    {
+        "id":    "recall_line",
+        "icon":  "📈",
+        "title": "Recall@10 vs Bits — Quanto a qualidade cai ao comprimir?",
+        "what":  "Mostra como o Recall@10 de cada variante varia conforme reduzimos o número "
+                 "de bits de 8 para 2. As linhas tracejadas marcam os baselines float32 e float16.",
+        "how":   "<b>Eixo X</b>: bits por dimensão (8→4→2). <b>Eixo Y</b>: Recall@10 "
+                 "(0 = nenhum resultado correto, 1 = todos corretos). Linhas mais altas = "
+                 "melhor qualidade para o mesmo nível de compressão. Passe o mouse sobre os "
+                 "pontos para ver os valores exatos.",
+        "impact":"<b>TurboQuantMSE a 4-bit</b> mantém Recall@10 igual ou superior ao float32 "
+                 "com 8× menos memória — o sweet spot do paper TurboQuant. <b>Uniform a 2-bit</b> "
+                 "colapsa: a rotação aleatória antes da quantização é o que diferencia os métodos.",
+        "badge": "insight chave",
+        "badge_color": "#d65f5f",
+    },
+    {
+        "id":    "tradeoff",
+        "icon":  "⭐",
+        "title": "Trade-off: Qualidade × Memória — O gráfico mais importante",
+        "what":  "Scatter plot onde cada ponto é uma configuração (variante + bits). "
+                 "Mostra simultaneamente a qualidade de retrieval e o custo de memória. "
+                 "A linha laranja é a <b>fronteira de Pareto</b>: pontos onde não é possível "
+                 "melhorar qualidade sem aumentar memória.",
+        "how":   "<b>Eixo X (log)</b>: quanto menor, mais economia de memória. "
+                 "<b>Eixo Y</b>: Recall@10 — quanto maior, melhor. O ponto ideal está no "
+                 "canto <b>superior esquerdo</b>. Pontos na fronteira de Pareto são as melhores "
+                 "escolhas possíveis. Passe o mouse para ver a taxa de compressão exata.",
+        "impact":"Pontos TurboQuantMSE ficam acima de Uniform e Lloyd-Max para a mesma "
+                 "posição horizontal, provando que a rotação ortogonal é essencial. "
+                 "<b>turbo_mse 4-bit é o sweet spot</b>: 7.9× compressão sem perda de qualidade.",
+        "badge": "mais importante",
+        "badge_color": "#e67e22",
+    },
+    {
+        "id":    "mse",
+        "icon":  "📐",
+        "title": "MSE por Variante — Distorção Geométrica dos Vetores",
+        "what":  "Mede o erro quadrático médio (MSE) entre os vetores originais float32 e os "
+                 "vetores reconstruídos após quantização + dequantização. Indica o quanto a "
+                 "geometria do espaço de embeddings é distorcida.",
+        "how":   "<b>Eixo Y em escala log</b>: valores menores = menos distorção. "
+                 "Cada grupo de barras representa um nível de bits (8→4→2). "
+                 "Barras mais baixas dentro do mesmo grupo = variante mais fiel ao original. "
+                 "Hover para ver o valor exato.",
+        "impact":"Lloyd-Max sem rotação tem MSE alto apesar de usar o mesmo codebook que "
+                 "TurboQuantMSE. Isso confirma que o <b>codebook ótimo sozinho não basta</b> — "
+                 "a rotação é necessária para que a distribuição das coordenadas corresponda "
+                 "ao codebook teórico.",
+        "badge": "distorção geométrica",
+        "badge_color": "#4878cf",
+    },
+    {
+        "id":    "heatmap",
+        "icon":  "🌡️",
+        "title": "Heatmap de Erros de Produto Interno",
+        "what":  "Mede três tipos de erro no produto interno (dot product) entre queries e "
+                 "documentos: <b>IP Bias</b> (viés sistemático), <b>IP MAE</b> (magnitude "
+                 "média do erro) e <b>IP Variance</b> (consistência do erro).",
+        "how":   "<b>Verde</b> = erro baixo (bom). <b>Vermelho</b> = erro alto (ruim). "
+                 "Cada coluna é uma variante+bits. As células mostram o valor real. "
+                 "O <b>IP Bias</b> é especialmente importante: um viés alto significa que "
+                 "os scores de similaridade são sistematicamente errados.",
+        "impact":"<b>Lloyd-Max tem IP Bias altíssimo</b> (−0.13 a 8-bit) pois o codebook "
+                 "recorta coordenadas grandes, criando viés. <b>TurboQuantMSE elimina esse "
+                 "viés</b> com a rotação. <b>TurboQuantProd vai além</b>: o QJL corrige o "
+                 "viés residual do MSE, mantendo IP Bias próximo de zero em todos os bits.",
+        "badge": "viés de produto interno",
+        "badge_color": "#6acc65",
+    },
+    {
+        "id":    "compression",
+        "icon":  "🗜️",
+        "title": "Compressão × Perda de Recall — Identificando o Sweet Spot",
+        "what":  "Gráfico dual-axis: as <b>barras</b> mostram a taxa de compressão de memória "
+                 "(quanto menor o embedding, maior a barra); a <b>linha</b> mostra a queda "
+                 "no Recall@10 em pontos percentuais em relação ao baseline float32.",
+        "how":   "<b>Barras altas</b> = muita compressão (bom). <b>Linha próxima de zero</b> "
+                 "= pouca perda de qualidade (bom). O sweet spot é onde a barra é alta E a "
+                 "linha está perto de zero. Anotações em vermelho destacam quedas severas (>5pp).",
+        "impact":"Qualquer variante com <b>queda < 1pp e compressão > 7×</b> é um candidato "
+                 "viável para produção. Compressão agressiva (2-bit) sem rotação causa quedas "
+                 "de 40+ pp — inutilizável. Com rotação (TurboQuantMSE 2-bit), a queda é < 2pp.",
+        "badge": "decisão de produção",
+        "badge_color": "#b47cc7",
+    },
+    {
+        "id":    "memory",
+        "icon":  "💾",
+        "title": "Compressão de Memória por Variante",
+        "what":  "Barras horizontais mostrando o tamanho real dos embeddings em MB para cada "
+                 "variante, usando bit-packing correto (2 índices de 4-bit por byte, "
+                 "4 índices de 2-bit por byte). Cor indica a taxa de compressão.",
+        "how":   "Barras mais curtas = menos memória. A cor varia de vermelho (pouca compressão) "
+                 "a verde (muita compressão). Os valores à direita mostram o tamanho exato e a "
+                 "taxa vs. float32. <b>Atenção:</b> sem bit-packing, 4-bit usaria o mesmo espaço "
+                 "que 8-bit — o packing é obrigatório para atingir as taxas teóricas.",
+        "impact":"O ganho de memória é real e significativo em escala: 1 milhão de documentos "
+                 "com dim=384 em <b>turbo_mse 4-bit</b> ocupa ~184 MB em vez de 1.46 GB. "
+                 "Isso permite manter o corpus inteiro em RAM em hardware mais barato.",
+        "badge": "memória em disco",
+        "badge_color": "#16a085",
+    },
+    {
+        "id":    "degradation",
+        "icon":  "🔍",
+        "title": "Degradação de Rank por Query — Quais Queries Sofrem Mais?",
+        "what":  "Violin plot mostrando a distribuição do rank do documento relevante por query, "
+                 "para cada variante. Cada ponto é uma query individual. O rank 1 significa "
+                 "'documento relevante encontrado na primeira posição'.",
+        "how":   "<b>Rank baixo (próximo de 1)</b> = sistema funcionando bem para essa query. "
+                 "<b>Rank alto (ou >20)</b> = sistema não encontrou o relevante. "
+                 "A largura do violin em cada altura indica quantas queries ficaram naquele rank. "
+                 "A mediana é mostrada em branco.",
+        "impact":"<b>uniform 2-bit</b> mostra padrão bimodal: ou funciona perfeitamente (rank 1-2) "
+                 "ou falha completamente (rank >20). Não há meio-termo. "
+                 "<b>turbo_mse</b> mantém quase todas as queries no rank 1-3 mesmo a 2-bit, "
+                 "demonstrando que a rotação ortogonal estabiliza o comportamento por query.",
+        "badge": "análise por query",
+        "badge_color": "#8e44ad",
+    },
+    {
+        "id":    "latency",
+        "icon":  "⚡",
+        "title": "Latência de Busca — Quantização não Penaliza a Velocidade",
+        "what":  "Comparação da latência mediana de busca (em ms por query) para todas as "
+                 "variantes. A linha tracejada marca o baseline float32.",
+        "how":   "<b>Barras mais curtas</b> = mais rápido. Todas as variantes usam "
+                 "<b>IndexFlatIP do FAISS com vetores float32</b> — a quantização é desfeita "
+                 "antes de inserir no índice. Por isso a latência é idêntica independente "
+                 "do nível de compressão.",
+        "impact":"O ganho de memória vem do <b>armazenamento em disco</b> (.npz bit-packed), "
+                 "não do índice de busca. Em produção, o benefício real é: menor custo de RAM, "
+                 "carregamento mais rápido do disco, e a possibilidade de usar índices "
+                 "quantizados nativos (ex: FAISS IndexIVFPQ) para ganho de velocidade também.",
+        "badge": "latência de busca",
+        "badge_color": "#2980b9",
+    },
+]
+
+# ── HTML assembler ─────────────────────────────────────────────────────────────
+
+def _write_html(figs: list, bench: pd.DataFrame, dist: pd.DataFrame) -> None:
+    import plotly.io as pio
+
+    Path("charts").mkdir(exist_ok=True)
+    out = Path("charts/dashboard.html")
+
+    # Calcula métricas para o summary card
+    f32_r10  = bench[bench["variant"] == "baseline_f32"]["recall_at_10"].values
+    f32_r10  = float(f32_r10[0]) if len(f32_r10) else 0.0
+    best_row = bench[bench["recall_at_10"] >= f32_r10 * 0.99].nlargest(1, "compression_vs_f32")
+    sweet_label = f"{best_row['variant'].values[0]} {int(best_row['bits'].values[0])}-bit" if not best_row.empty else "N/A"
+    sweet_comp  = float(best_row["compression_vs_f32"].values[0]) if not best_row.empty else 1.0
+    uniform_2   = bench[(bench["variant"] == "uniform") & (bench["bits"] == 2)]["recall_at_10"]
+    uniform_2   = float(uniform_2.values[0]) if not uniform_2.empty else 0.0
+
+    # Inclui Plotly via CDN apenas no primeiro gráfico
+    plotly_divs = []
+    for i, fig in enumerate(figs):
+        include_js = (i == 0)
+        plotly_divs.append(pio.to_html(fig, full_html=False, include_plotlyjs="cdn" if include_js else False))
+
+    html = _HTML_TEMPLATE.format(
+        sweet_label=sweet_label,
+        sweet_comp=f"{sweet_comp:.1f}",
+        f32_r10=f"{f32_r10:.3f}",
+        uniform_2_r10=f"{uniform_2:.3f}",
+        n_variants=len(bench),
+        sections=_build_sections(plotly_divs),
+    )
+    out.write_text(html, encoding="utf-8")
+
+
+# ── Legenda de variantes e bits ────────────────────────────────────────────────
+
+# ── Seção RAG demo (HTML estático) ────────────────────────────────────────────
+_RAG_SECTION_HTML = """
+<section id="rag_demo" class="chart-section" style="margin-bottom:32px">
+  <div class="section-header">
+    <span class="section-icon">🤖</span>
+    <h2 class="section-title">Impacto End-to-End no Pipeline RAG</h2>
+    <span class="badge" style="background:#c0392b">impacto real</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">
+        Compara os documentos que cada variante recupera para a mesma query.
+        Mostra se a degradação numérica nos benchmarks se traduz em respostas
+        erradas na prática &mdash; o que importa de verdade num sistema RAG.
+      </div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body">
+        Cada linha é um rank (1 = mais relevante). Células verdes = documento
+        idêntico ao float32. Células amarelas = documento diferente.
+        A tabela de divergência mostra em quantos dos top-5 documentos
+        cada variante concorda com o baseline.
+      </div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">
+        <b>turbo_mse 4-bit</b>: 5/5 documentos idênticos ao float32 &mdash;
+        o LLM recebe exatamente o mesmo contexto. <b>uniform 2-bit</b>: 0/5
+        documentos corretos &mdash; o LLM responde sobre o tema errado sem
+        nenhum erro explícito no sistema.
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:16px 24px 20px">
+    <p style="font-size:.88rem;color:#4a5568;margin-bottom:16px">
+      Query: <code style="background:#f0f2f5;padding:2px 8px;border-radius:4px">
+      how does Redis handle memory when it runs out?</code>
+    </p>
+
+    <div style="overflow-x:auto">
+      <table class="rag-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>float32 <span class="var-dot" style="background:#333"></span></th>
+            <th>turbo_mse 4-bit <span class="var-dot" style="background:#D65F5F"></span></th>
+            <th>uniform 2-bit <span class="var-dot" style="background:#4878CF"></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="rank-cell">1</td>
+            <td class="doc-cell ok"><span class="score">0.795</span><span class="doc-id">redis-guide-p00-c32</span><span class="doc-prev">The maxmemory configuration limits Redis memory usage. When memory is full, the eviction policy determines which keys to remove…</span></td>
+            <td class="doc-cell ok"><span class="score">0.787</span><span class="doc-id">redis-guide-p00-c32</span><span class="doc-prev">The maxmemory configuration limits Redis memory usage. When memory is full, the eviction policy determines which keys to remove…</span></td>
+            <td class="doc-cell ok"><span class="score">0.790</span><span class="doc-id">redis-guide-p00-c34</span><span class="doc-prev">state store for distributed optimization frameworks. Workers can read and write trial results atomically…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">2</td>
+            <td class="doc-cell ok"><span class="score">0.794</span><span class="doc-id">redis-guide-p00-c30</span><span class="doc-prev">GET and SET operations with small values achieve over 1 million operations per second on a single Redis instance…</span></td>
+            <td class="doc-cell ok"><span class="score">0.776</span><span class="doc-id">redis-guide-p00-c30</span><span class="doc-prev">GET and SET operations with small values achieve over 1 million operations per second on a single Redis instance…</span></td>
+            <td class="doc-cell ok"><span class="score">0.738</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">3</td>
+            <td class="doc-cell ok"><span class="score">0.785</span><span class="doc-id">redis-guide-p00-c31</span><span class="doc-prev">all data that needs to be kept in memory, including Redis overhead. Redis uses approximately 100 bytes…</span></td>
+            <td class="doc-cell ok"><span class="score">0.765</span><span class="doc-id">redis-guide-p00-c31</span><span class="doc-prev">all data that needs to be kept in memory, including Redis overhead. Redis uses approximately 100 bytes…</span></td>
+            <td class="doc-cell ok"><span class="score">0.718</span><span class="doc-id">redis-guide-p00-c02</span><span class="doc-prev">Redis stores all data in memory by default, which enables sub-millisecond read and write latency…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">4</td>
+            <td class="doc-cell ok"><span class="score">0.768</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+            <td class="doc-cell ok"><span class="score">0.755</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+            <td class="doc-cell ok"><span class="score">0.715</span><span class="doc-id">redis-guide-p00-c03</span><span class="doc-prev">Redis is single-threaded for command processing, which eliminates the need for locks…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">5</td>
+            <td class="doc-cell ok"><span class="score">0.765</span><span class="doc-id">redis-guide-p00-c33</span><span class="doc-prev">performance issue. When keys of varying sizes are frequently added and deleted, the memory allocator…</span></td>
+            <td class="doc-cell ok"><span class="score">0.747</span><span class="doc-id">redis-guide-p00-c33</span><span class="doc-prev">performance issue. When keys of varying sizes are frequently added and deleted, the memory allocator…</span></td>
+            <td class="doc-cell warn"><span class="score">0.713</span><span class="doc-id">PLAN-p00-c03</span><span class="doc-prev">⚠ Documento sobre o próprio lab (PLAN.md) — completamente irrelevante para a query sobre Redis!</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="div-table" style="margin-top:16px">
+      <table class="rag-table">
+        <thead>
+          <tr><th>Variante</th><th>Docs em comum c/ f32</th><th>Top-1 idêntico?</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>turbo_mse_4bit</code></td>
+            <td><span class="pill green">5 / 5 (100%)</span></td>
+            <td><span class="pill green">Sim ✓</span></td>
+            <td><span class="pill green">Qualidade mantida</span></td>
+          </tr>
+          <tr>
+            <td><code>uniform_2bit</code></td>
+            <td><span class="pill red">0 / 5 (0%)</span></td>
+            <td><span class="pill red">Não ✗</span></td>
+            <td><span class="pill red">Degradação severa</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="font-size:.82rem;color:#7f8c8d;margin-top:12px">
+      Execute <code>make rag-demo QUERY="..."</code> para testar com qualquer pergunta.
+      Suporta Ollama (<code>BACKEND=ollama MODEL=llama3.2</code>) e APIs OpenAI-compatible.
+    </p>
+  </div>
+</section>
+"""
+
+
+_LEGEND_HTML = """
+<section id="legend" class="chart-section" style="margin-bottom:32px">
+  <div class="section-header">
+    <span class="section-icon">📖</span>
+    <h2 class="section-title">Guia de Leitura — Variantes e Níveis de Bits</h2>
+    <span class="badge" style="background:#2980b9">glossário</span>
+  </div>
+
+  <!-- Variantes -->
+  <div style="padding:20px 24px 8px">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px">
+      Variantes de Quantização
+    </h3>
+    <div class="legend-grid">
+
+      <div class="legend-card" style="--lc:#333333">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">baseline_f32</span>
+          <span class="lc-badge" style="background:#e8f4fd;color:#2980b9">refer&ecirc;ncia</span>
+        </div>
+        <div class="lc-body">
+          <b>Embeddings originais em float32</b> (32 bits por valor).
+          Nenhuma compressão aplicada. Serve como teto de qualidade:
+          todos os resultados são comparados contra este baseline.
+        </div>
+        <div class="lc-formula">1 vetor &times; dim &times; <b>4 bytes</b> = 1536 B (dim=384)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#888888">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">baseline_f16</span>
+          <span class="lc-badge" style="background:#f5f5f5;color:#555">compress&atilde;o simples</span>
+        </div>
+        <div class="lc-body">
+          <b>Float16 (meia precis&atilde;o)</b>: divide cada valor de 32 bits para 16 bits
+          simplesmente reduzindo a precis&atilde;o num&eacute;rica. Sem transformação do vetor.
+          Compressão de <b>2&times;</b> com perda mínima de qualidade.
+        </div>
+        <div class="lc-formula">1 vetor &times; dim &times; <b>2 bytes</b> = 768 B</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#4878CF">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">uniform</span>
+          <span class="lc-badge" style="background:#eef3fb;color:#4878CF">baseline quantização</span>
+        </div>
+        <div class="lc-body">
+          <b>Quantização escalar uniforme</b>: divide o intervalo [min, max] de todos
+          os valores em 2<sup>bits</sup> &minus; 1 bins de largura igual, e armazena o
+          índice de cada bin. <em>N&atilde;o aplica rotação</em>. M&eacute;todo mais simples, serve
+          como baseline para comparar com os m&eacute;todos mais avan&ccedil;ados.
+        </div>
+        <div class="lc-formula">bins uniformes &bull; sem rota&ccedil;&atilde;o &bull; dados-dependente (min/max global)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#6ACC65">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">lloyd_max</span>
+          <span class="lc-badge" style="background:#eefbee;color:#27ae60">codebook &oacute;timo</span>
+        </div>
+        <div class="lc-body">
+          <b>Codebook Lloyd-Max</b>: em vez de bins uniformes, calcula os
+          2<sup>bits</sup> centroides que minimizam o MSE para a distribuição
+          teórica das coordenadas de um vetor unitário em S<sup>d-1</sup>
+          (distribuição Beta concentrada em torno de zero).
+          <em>N&atilde;o aplica rotação</em>, por isso o codebook funciona mal sem ela
+          — a distribuição real não corresponde à teórica.
+        </div>
+        <div class="lc-formula">bins &oacute;timos (Lloyd-Max) &bull; sem rota&ccedil;&atilde;o &bull; dados-independente</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#D65F5F">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">turbo_mse</span>
+          <span class="lc-badge" style="background:#fdf0f0;color:#c0392b">TurboQuant MSE</span>
+        </div>
+        <div class="lc-body">
+          <b>TurboQuantMSE</b> (paper TurboQuant): aplica uma <b>rotação ortogonal
+          aleatória</b> ao vetor antes de quantizar. A rotação equaliza a energia
+          entre todas as dimens&otilde;es, fazendo com que cada coordenada siga
+          <em>exatamente</em> a distribuição teórica do codebook Lloyd-Max.
+          Resultado: mesmo codebook, qualidade <em>muito</em> superior ao lloyd_max puro.
+        </div>
+        <div class="lc-formula"><b>rotação Q</b> + codebook Lloyd-Max &bull; dados-independente &bull; reconstruç&atilde;o: Q<sup>T</sup> &times; dequant(idx)</div>
+      </div>
+
+      <div class="legend-card" style="--lc:#B47CC7">
+        <div class="lc-header">
+          <span class="lc-dot"></span>
+          <span class="lc-name">turbo_prod</span>
+          <span class="lc-badge" style="background:#f9f0fd;color:#8e44ad">TurboQuant Prod</span>
+        </div>
+        <div class="lc-body">
+          <b>TurboQuantProd</b>: extens&atilde;o do MSE que adiciona um segundo passo de
+          compress&atilde;o do <em>resíduo</em> usando <b>QJL</b>
+          (Johnson-Lindenstrauss Quantizado). Usa (b-1) bits para a parte MSE
+          e 1 bit por dimens&atilde;o para o resíduo (sinal de uma projeç&atilde;o gaussiana).
+          Elimina o vi&eacute;s de produto interno que o TurboQuantMSE introduz,
+          produzindo estimativas de similaridade mais precisas.
+        </div>
+        <div class="lc-formula">rotaç&atilde;o Q + Lloyd-Max(<b>b-1</b> bits) + QJL resíduo(<b>1</b> bit) &bull; vi&eacute;s &asymp; 0</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bits -->
+  <div style="padding:16px 24px 20px;border-top:1px solid #f0f2f5">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin-bottom:14px;text-transform:uppercase;letter-spacing:.5px">
+      Níveis de Bits — O que significa cada valor
+    </h3>
+    <div class="bits-grid">
+
+      <div class="bits-card">
+        <div class="bits-val">32</div>
+        <div class="bits-label">Float32 (baseline)</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:100%;background:#333"></div></div>
+        <div class="bits-desc">
+          Representação padrão de ponto flutuante (IEEE 754).
+          <b>1536 bytes/vetor</b> para dim=384. Precisão total,
+          sem nenhuma compressão. Baseline de referência.
+        </div>
+      </div>
+
+      <div class="bits-card">
+        <div class="bits-val">16</div>
+        <div class="bits-label">Float16 (baseline)</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:50%;background:#888"></div></div>
+        <div class="bits-desc">
+          Meia precisão. <b>768 bytes/vetor</b> (2&times; menor).
+          Trunca mantissa de 23 para 10 bits. Perda de qualidade
+          mínima. Compressão trivial sem algoritmo especial.
+        </div>
+      </div>
+
+      <div class="bits-card highlight">
+        <div class="bits-val">8</div>
+        <div class="bits-label">8-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:25%;background:#D65F5F"></div></div>
+        <div class="bits-desc">
+          256 níveis possíveis por dimensão.
+          <b>386 bytes/vetor</b> (4&times; menor).
+          Qualidade próxima do float32 para todos os métodos.
+          Ponto de entrada conservador para produção.
+        </div>
+      </div>
+
+      <div class="bits-card highlight sweet">
+        <div class="bits-val">4</div>
+        <div class="bits-label">4-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:12.5%;background:#27ae60"></div></div>
+        <div class="bits-desc">
+          16 níveis possíveis por dimensão.
+          <b>194 bytes/vetor</b> (8&times; menor).
+          <span style="color:#27ae60;font-weight:700">Sweet spot do paper TurboQuant</span>:
+          TurboQuantMSE 4-bit mantém qualidade igual ao float32
+          com 8&times; menos memória.
+        </div>
+      </div>
+
+      <div class="bits-card">
+        <div class="bits-val">2</div>
+        <div class="bits-label">2-bit quantizado</div>
+        <div class="bits-bar"><div class="bits-fill" style="width:6.25%;background:#e67e22"></div></div>
+        <div class="bits-desc">
+          4 níveis possíveis por dimensão.
+          <b>98 bytes/vetor</b> (16&times; menor).
+          Compressão extrema: <em>uniform 2-bit</em> colapsa
+          (Recall@10 cai >40pp). TurboQuantMSE aguenta
+          com perda &lt;2pp gra&ccedil;as &agrave; rotação ortogonal.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Como os métodos se comparam -->
+  <div style="padding:0 24px 20px;border-top:1px solid #f0f2f5">
+    <h3 style="font-size:.95rem;font-weight:700;color:#2c3e50;margin:16px 0 14px;text-transform:uppercase;letter-spacing:.5px">
+      Relação entre os Métodos
+    </h3>
+    <div class="pipeline-row">
+      <div class="pipe-step" style="--pc:#4878CF">
+        <div class="pipe-icon">①</div>
+        <div class="pipe-name">uniform</div>
+        <div class="pipe-desc">bins iguais<br>sem rotação</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ codebook<br>&oacute;timo</span></div>
+      <div class="pipe-step" style="--pc:#6ACC65">
+        <div class="pipe-icon">②</div>
+        <div class="pipe-name">lloyd_max</div>
+        <div class="pipe-desc">bins &oacute;timos<br>sem rotação</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ rotação<br>ortogonal</span></div>
+      <div class="pipe-step" style="--pc:#D65F5F">
+        <div class="pipe-icon">③</div>
+        <div class="pipe-name">turbo_mse</div>
+        <div class="pipe-desc">rotação +<br>bins &oacute;timos</div>
+      </div>
+      <div class="pipe-arrow">→ <span>+ QJL<br>resíduo</span></div>
+      <div class="pipe-step" style="--pc:#B47CC7">
+        <div class="pipe-icon">④</div>
+        <div class="pipe-name">turbo_prod</div>
+        <div class="pipe-desc">rotação +<br>bins + QJL</div>
+      </div>
+    </div>
+    <p style="font-size:.82rem;color:#7f8c8d;margin-top:10px;padding:0 4px">
+      Cada seta adiciona um componente do paper TurboQuant.
+      A rotação ortogonal (②→③) &eacute; o insight mais importante:
+      aumenta o Cosine Sim médio de ~0.79 para ~0.98 no 4-bit
+      sem alterar a taxa de compressão.
+    </p>
+  </div>
+
+</section>
+"""
+
+
+def _build_sections(plotly_divs: list[str]) -> str:
+    parts = [_LEGEND_HTML, _RAG_SECTION_HTML]   # legenda + demo primeiro
+    for meta, div in zip(CHART_META, plotly_divs, strict=True):
+        badge_html = (
+            f'<span class="badge" style="background:{meta["badge_color"]}">'
+            f'{meta["badge"]}</span>'
+        )
+        parts.append(f"""
+<section id="{meta['id']}" class="chart-section">
+  <div class="section-header">
+    <span class="section-icon">{meta['icon']}</span>
+    <h2 class="section-title">{meta['title']}</h2>
+    {badge_html}
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">{meta['what']}</div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body">{meta['how']}</div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">{meta['impact']}</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    {div}
+  </div>
+</section>
+""")
+    return "\n".join(parts)
+
+
+# ── Template HTML ──────────────────────────────────────────────────────────────
+
+_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Embedding Compression Lab — Dashboard</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────── */
+*, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f0f2f5;
+  color: #2c3e50;
+  line-height: 1.6;
+}}
+
+/* ── Header ───────────────────────────────────────── */
+header {{
+  background: linear-gradient(135deg, #1a252f 0%, #2c3e50 60%, #34495e 100%);
+  color: white;
+  padding: 28px 40px 20px;
+}}
+header h1 {{
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+}}
+header p {{
+  color: #bdc3c7;
+  font-size: 0.9rem;
+}}
+.header-chips {{
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}}
+.chip {{
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  color: #ecf0f1;
+}}
+
+/* ── Summary Cards ────────────────────────────────── */
+.summary-bar {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  padding: 20px 40px;
+  background: #e8ecf0;
+  border-bottom: 1px solid #d5dde5;
+}}
+.summary-card {{
+  background: white;
+  border-radius: 10px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+  border-left: 4px solid var(--accent, #4878CF);
+}}
+.summary-card .label {{ font-size: 0.75rem; color: #7f8c8d; text-transform: uppercase; letter-spacing: 0.5px; }}
+.summary-card .value {{ font-size: 1.6rem; font-weight: 700; color: var(--accent, #4878CF); margin: 2px 0; }}
+.summary-card .sub   {{ font-size: 0.78rem; color: #95a5a6; }}
+
+/* ── Nav ──────────────────────────────────────────── */
+nav {{
+  background: white;
+  border-bottom: 1px solid #e0e4e8;
+  padding: 0 40px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}}
+nav ul {{
+  display: flex;
+  list-style: none;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}}
+nav ul::-webkit-scrollbar {{ display: none; }}
+nav a {{
+  display: block;
+  padding: 14px 18px;
+  text-decoration: none;
+  color: #7f8c8d;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  white-space: nowrap;
+  transition: color .2s, border-color .2s;
+}}
+nav a:hover {{ color: #2c3e50; border-color: #bdc3c7; }}
+
+/* ── Main content ─────────────────────────────────── */
+main {{ padding: 24px 40px 60px; max-width: 1400px; margin: 0 auto; }}
+
+/* ── Section ──────────────────────────────────────── */
+.chart-section {{
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  margin-bottom: 32px;
+  overflow: hidden;
+}}
+.section-header {{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid #f0f2f5;
+  flex-wrap: wrap;
+}}
+.section-icon {{ font-size: 1.5rem; }}
+.section-title {{
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #2c3e50;
+  flex: 1;
+}}
+.badge {{
+  padding: 3px 11px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}}
+
+/* ── Description cards ────────────────────────────── */
+.desc-grid {{
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  border-bottom: 1px solid #f0f2f5;
+}}
+@media (max-width: 860px) {{
+  .desc-grid {{ grid-template-columns: 1fr; }}
+}}
+.desc-card {{
+  padding: 16px 22px;
+  border-right: 1px solid #f0f2f5;
+  font-size: 0.85rem;
+  color: #4a5568;
+}}
+.desc-card:last-child {{ border-right: none; }}
+.desc-label {{
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 7px;
+  color: #2c3e50;
+}}
+.desc-card.what   {{ background: #fafbff; }}
+.desc-card.how    {{ background: #fffaf5; }}
+.desc-card.impact {{ background: #f5fff8; }}
+
+/* ── Chart wrapper ────────────────────────────────── */
+.chart-wrap {{ padding: 12px 16px 4px; }}
+
+/* ── RAG demo table ──────────────────────────────── */
+.rag-table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  margin-bottom: 4px;
+}}
+.rag-table th {{
+  background: #2c3e50;
+  color: white;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+}}
+.rag-table td {{ padding: 7px 10px; vertical-align: top; border-bottom: 1px solid #f0f2f5; }}
+.rank-cell {{ font-weight: 700; color: #2c3e50; text-align: center; width: 40px; }}
+.doc-cell {{ max-width: 300px; }}
+.doc-cell.ok   {{ background: #f8fff8; }}
+.doc-cell.warn {{ background: #fff8f0; border-left: 3px solid #e67e22; }}
+.score  {{ display:block; font-size:.75rem; color:#7f8c8d; font-family:monospace; }}
+.doc-id {{ display:block; font-weight:700; font-size:.8rem; color:#2c3e50; margin:2px 0; font-family:monospace; }}
+.doc-prev {{ display:block; font-size:.75rem; color:#7f8c8d; line-height:1.4; }}
+.var-dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:4px; vertical-align:middle; }}
+.pill {{
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: .75rem;
+  font-weight: 600;
+}}
+.pill.green {{ background:#e8f8f0; color:#1a7a4a; }}
+.pill.red   {{ background:#fdecea; color:#c0392b; }}
+
+/* ── Legend cards ────────────────────────────────── */
+.legend-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  margin-bottom: 4px;
+}}
+.legend-card {{
+  border: 1.5px solid #e8ecf0;
+  border-left: 4px solid var(--lc, #ccc);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fafbfc;
+}}
+.lc-header {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}}
+.lc-dot {{
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--lc, #ccc);
+  flex-shrink: 0;
+}}
+.lc-name {{
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .88rem;
+  font-weight: 700;
+  color: #2c3e50;
+}}
+.lc-badge {{
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: .7rem;
+  font-weight: 600;
+}}
+.lc-body {{
+  font-size: .83rem;
+  color: #4a5568;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}}
+.lc-formula {{
+  font-size: .75rem;
+  color: #7f8c8d;
+  background: #f0f2f5;
+  border-radius: 4px;
+  padding: 5px 9px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}}
+
+/* ── Bits cards ─────────────────────────────────────── */
+.bits-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}}
+.bits-card {{
+  border: 1.5px solid #e8ecf0;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fafbfc;
+}}
+.bits-card.highlight {{ border-color: #d0dff5; background: #f7faff; }}
+.bits-card.sweet      {{ border-color: #b7e4c7; background: #f0fdf4; }}
+.bits-val {{
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #2c3e50;
+  line-height: 1;
+}}
+.bits-label {{ font-size: .78rem; color: #7f8c8d; margin: 3px 0 8px; }}
+.bits-bar {{
+  height: 6px;
+  background: #e8ecf0;
+  border-radius: 3px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}}
+.bits-fill {{ height: 100%; border-radius: 3px; }}
+.bits-desc {{ font-size: .8rem; color: #4a5568; line-height: 1.5; }}
+
+/* ── Pipeline row ─────────────────────────────────── */
+.pipeline-row {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}}
+.pipe-step {{
+  border: 2px solid var(--pc, #ccc);
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: center;
+  min-width: 100px;
+  background: #fafbfc;
+}}
+.pipe-icon {{ font-size: 1.1rem; margin-bottom: 3px; }}
+.pipe-name {{
+  font-family: monospace;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--pc, #333);
+}}
+.pipe-desc {{ font-size: .73rem; color: #7f8c8d; margin-top: 3px; line-height: 1.4; }}
+.pipe-arrow {{ color: #bdc3c7; font-size: 1.1rem; text-align: center; flex-shrink: 0; }}
+.pipe-arrow span {{ font-size: .7rem; color: #7f8c8d; display: block; line-height: 1.3; }}
+
+
+
+/* ── Footer ───────────────────────────────────────── */
+footer {{
+  text-align: center;
+  color: #95a5a6;
+  font-size: 0.8rem;
+  padding: 20px;
+  border-top: 1px solid #e0e4e8;
+  background: white;
+}}
+</style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <h1>📊 RAG Embedding Compression Lab — Dashboard</h1>
+  <p>Análise completa do impacto da quantização de embeddings na qualidade de retrieval</p>
+  <div class="header-chips">
+    <span class="chip">📄 {n_variants} configurações analisadas</span>
+    <span class="chip">🤖 Modelo: BAAI/bge-small-en-v1.5 (dim=384)</span>
+    <span class="chip">4 variantes × 3 bits</span>
+    <span class="chip">TurboQuant</span>
+  </div>
+</header>
+
+<!-- ── Summary Bar ─────────────────────────────────────── -->
+<div class="summary-bar">
+  <div class="summary-card" style="--accent:#27ae60">
+    <div class="label">Sweet Spot</div>
+    <div class="value" style="font-size:1.15rem">{sweet_label}</div>
+    <div class="sub">{sweet_comp}× compressão, Recall@10 ≈ float32</div>
+  </div>
+  <div class="summary-card" style="--accent:#2980b9">
+    <div class="label">Baseline float32</div>
+    <div class="value">{f32_r10}</div>
+    <div class="sub">Recall@10 de referência</div>
+  </div>
+  <div class="summary-card" style="--accent:#e74c3c">
+    <div class="label">Uniform 2-bit R@10</div>
+    <div class="value">{uniform_2_r10}</div>
+    <div class="sub">Sem rotação = colapso de qualidade</div>
+  </div>
+  <div class="summary-card" style="--accent:#8e44ad">
+    <div class="label">Métrica principal</div>
+    <div class="value">Recall@10</div>
+    <div class="sub">Fração de queries com relevante no top-10</div>
+  </div>
+</div>
+
+<!-- ── Nav ─────────────────────────────────────────────── -->
+<nav>
+  <ul>
+    <li><a href="#legend" style="color:#2980b9;font-weight:600">📖 Legenda</a></li>
+    <li><a href="#rag_demo" style="color:#c0392b;font-weight:600">🤖 RAG Demo</a></li>
+    <li><a href="#overview">📋 Tabela</a></li>
+    <li><a href="#recall_line">📈 Recall vs Bits</a></li>
+    <li><a href="#tradeoff">⭐ Trade-off</a></li>
+    <li><a href="#mse">📐 MSE</a></li>
+    <li><a href="#heatmap">🌡️ IP Heatmap</a></li>
+    <li><a href="#compression">🗜️ Compressão</a></li>
+    <li><a href="#memory">💾 Memória</a></li>
+    <li><a href="#degradation">🔍 Queries</a></li>
+    <li><a href="#latency">⚡ Latência</a></li>
+  </ul>
+</nav>
+
+<!-- ── Main ────────────────────────────────────────────── -->
+<main>
+{sections}
+</main>
+
+<!-- ── Footer ──────────────────────────────────────────── -->
+<footer>
+  RAG Embedding Compression Lab &nbsp;·&nbsp; Gerado por <code>make visualize</code>
+  &nbsp;·&nbsp; Baseado no paper TurboQuant
+</footer>
+
+</body>
+</html>
+"""
+

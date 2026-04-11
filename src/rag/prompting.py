@@ -19,8 +19,10 @@ Variáveis de ambiente relevantes:
 from __future__ import annotations
 
 import os
-import textwrap
-from typing import Optional
+
+from rich.console import Console
+
+console = Console()
 
 PROMPT_TEMPLATE = """\
 Você é um assistente preciso. Use APENAS as informações do contexto abaixo para responder.
@@ -56,8 +58,8 @@ def _detect_backend() -> str:
         import urllib.request
         urllib.request.urlopen(f"{_ollama_url()}/api/tags", timeout=1)
         return "ollama"
-    except Exception:
-        pass
+    except Exception as e:  # noqa: BLE001
+        console.print(f"[dim]⚠ Ollama não acessível ({e.__class__.__name__}) — tentando próximo backend.[/dim]")
 
     # Tenta OpenAI-compatible
     if os.getenv("OPENAI_API_KEY"):
@@ -85,7 +87,7 @@ def _call_mock(prompt: str, context_chunks: list[str]) -> str:
     return f"[Mock — baseado no contexto recuperado]\n\n{snippet}"
 
 
-def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
+def _call_ollama(prompt: str, model: str | None = None) -> str:
     """Envia prompt ao Ollama. URL configurável via OLLAMA_BASE_URL."""
     import json
     import urllib.request
@@ -114,12 +116,12 @@ def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
     return response
 
 
-def _call_openai(prompt: str, model: Optional[str] = None) -> str:
+def _call_openai(prompt: str, model: str | None = None) -> str:
     """Envia prompt a qualquer API compatível com OpenAI (inclui OpenRouter)."""
     try:
         from openai import OpenAI
-    except ImportError:
-        raise RuntimeError("openai não instalado — execute: uv add openai")
+    except ImportError as exc:
+        raise RuntimeError("openai não instalado — execute: uv add openai") from exc
 
     api_key  = os.getenv("OPENAI_API_KEY", "")
     base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
@@ -165,8 +167,8 @@ def call_llm(
     query: str,
     context: str,
     context_chunks: list[str],
-    backend: Optional[str] = None,
-    model: Optional[str] = None,
+    backend: str | None = None,
+    model: str | None = None,
 ) -> tuple[str, str]:
     """
     Chama o LLM e retorna (answer, backend_used).

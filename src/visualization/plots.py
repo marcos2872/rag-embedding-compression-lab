@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -56,7 +57,7 @@ def plot_recall_vs_bits(bench: pd.DataFrame) -> None:
     """Line chart: Recall@1/5/10 × bits — uma linha por variante."""
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=False)
 
-    for ax, k in zip(axes, [1, 5, 10]):
+    for ax, k in zip(axes, [1, 5, 10], strict=True):
         col = f"recall_at_{k}"
         for var in VARIANTS:
             sub = bench[bench["variant"] == var].set_index("bits")
@@ -157,9 +158,9 @@ def plot_memory_compression(bench: pd.DataFrame) -> None:
     y  = np.arange(n)
     fig, ax = plt.subplots(figsize=(10, max(6, n * 0.42)))
 
-    bars = ax.barh(y, xs, color=colors_b, edgecolor="white", height=0.7)
+    ax.barh(y, xs, color=colors_b, edgecolor="white", height=0.7)
 
-    for i, (mb, comp) in enumerate(zip(xs, compressions)):
+    for i, (mb, comp) in enumerate(zip(xs, compressions, strict=True)):
         ax.text(mb + 0.003, i, f"{mb:.3f} MB  ({comp:.1f}×)",
                 va="center", fontsize=8.5, color="#333333")
 
@@ -226,7 +227,7 @@ def plot_tradeoff(bench: pd.DataFrame) -> None:
         ax.scatter(xs, ys, color=COLORS[var], marker=MARKERS[var],
                    s=sizes, zorder=5, label=LABELS[var], edgecolors="white", linewidths=0.8)
 
-        for x, y, b in zip(xs, ys, bts):
+        for x, y, b in zip(xs, ys, bts, strict=True):
             tag = f"{b}b" if var not in ("baseline_f32", "baseline_f16") else LABELS[var]
             ax.annotate(tag, (x, y), textcoords="offset points",
                         xytext=(6, 4), fontsize=8, color=COLORS[var])
@@ -237,9 +238,10 @@ def plot_tradeoff(bench: pd.DataFrame) -> None:
     pareto, best_y = [], -1.0
     for x, y in pts:
         if y > best_y:
-            pareto.append((x, y)); best_y = y
+            pareto.append((x, y))
+            best_y = y
     if len(pareto) > 1:
-        px, py = zip(*pareto)
+        px, py = zip(*pareto, strict=False)
         ax.step(px, py, where="post", color="#FF8C00", linewidth=2,
                 linestyle="--", label="Fronteira de Pareto", zorder=3)
 
@@ -276,8 +278,8 @@ def plot_ip_heatmap(dist: pd.DataFrame) -> None:
     norm_data = np.zeros_like(data, dtype=float)
     for i in range(data.shape[0]):
         r = data[i]
-        rng = r.max() - r.min()
-        norm_data[i] = (r - r.min()) / rng if rng > 0 else np.zeros_like(r)
+        val_range = r.max() - r.min()
+        norm_data[i] = (r - r.min()) / val_range if val_range > 0 else np.zeros_like(r)
 
     im = ax.imshow(norm_data, cmap="RdYlGn_r", aspect="auto", vmin=0, vmax=1)
 
@@ -350,8 +352,9 @@ def plot_recall_degradation(ranks_path: str | Path = "reports/per_query_ranks.cs
 
     parts = ax.violinplot(data_plot, positions=range(len(data_plot)),
                           showmedians=True, showextrema=True)
-    for pc, c in zip(parts["bodies"], colors_vl):
-        pc.set_facecolor(c); pc.set_alpha(0.6)
+    for pc, c in zip(parts["bodies"], colors_vl, strict=False):
+        pc.set_facecolor(c)
+        pc.set_alpha(0.6)
     parts["cmedians"].set_color("white")
     parts["cmedians"].set_linewidth(2)
 
@@ -396,15 +399,15 @@ def plot_compression_vs_recall_loss(bench: pd.DataFrame) -> None:
 
     x = np.arange(len(quant))
     bar_colors = [COLORS.get(v, "#aaaaaa") for v in quant["variant"]]
-    bars = ax1.bar(x, quant["compression_vs_f32"], color=bar_colors,
-                   alpha=0.75, edgecolor="white", width=0.6)
+    ax1.bar(x, quant["compression_vs_f32"], color=bar_colors,
+               alpha=0.75, edgecolor="white", width=0.6)
 
     ax2.plot(x, quant["recall_loss_pp"], color="#333333", marker="o",
              linewidth=2, markersize=6, zorder=5, label="Queda Recall@10 (pp)")
     ax2.axhline(0, color="green", linestyle="--", linewidth=1.2, alpha=0.7)
 
     # Anota pontos críticos
-    for i, (comp, loss) in enumerate(zip(quant["compression_vs_f32"], quant["recall_loss_pp"])):
+    for i, (_comp, loss) in enumerate(zip(quant["compression_vs_f32"], quant["recall_loss_pp"], strict=True)):
         if abs(loss) > 5:
             ax2.annotate(f"{loss:+.1f}pp", (i, loss),
                          textcoords="offset points", xytext=(0, 8),
@@ -485,4 +488,4 @@ def generate_all_plots() -> None:
     for r in rows:
         t.add_row(*r)
     console.print(t)
-    console.print(f"\n[bold green]✓ 8 gráficos salvos em charts/[/bold green]")
+    console.print("\n[bold green]✓ 8 gráficos salvos em charts/[/bold green]")

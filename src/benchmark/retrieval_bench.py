@@ -25,8 +25,11 @@ from __future__ import annotations
 import json
 import math
 import os
-import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import faiss
 
 import numpy as np
 import pandas as pd
@@ -34,8 +37,8 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
-from src.retrieval.faiss_store import build_index, load_index, save_index, _load_variant_embeddings
-from src.retrieval.metrics import recall_at_k, mrr, mean_latency_ms
+from src.retrieval.faiss_store import load_index
+from src.retrieval.metrics import mean_latency_ms, mrr, recall_at_k
 
 console = Console()
 
@@ -63,7 +66,8 @@ def embed_queries(
     load_dotenv()
 
     if model_name is None:
-        cfg = yaml.safe_load(open("configs/embedding.yaml")) or {}
+        with open("configs/embedding.yaml") as _f:
+            cfg = yaml.safe_load(_f) or {}
         model_name = os.getenv("EMBEDDING_MODEL") or cfg.get("model", "BAAI/bge-small-en-v1.5")
     if device is None:
         device = os.getenv("EMBEDDING_DEVICE", "cpu")
@@ -102,16 +106,16 @@ def _embed_size_mb(variant: str, bits: int, N: int, D: int) -> float:
 # ── Busca em um índice ─────────────────────────────────────────────────────────
 
 def _search_index(
-    index: "faiss.Index",
+    index: faiss.Index,
     Q: np.ndarray,
     k: int,
     corpus_ids: list[str],
 ) -> list[list[str]]:
     """Busca top-k e mapeia índices FAISS para corpus IDs."""
-    _, I = index.search(Q, k)
+    _, indices = index.search(Q, k)
     return [
         [corpus_ids[j] for j in row if 0 <= j < len(corpus_ids)]
-        for row in I
+        for row in indices
     ]
 
 
@@ -119,126 +123,130 @@ def _search_index(
 
 def run_retrieval_bench(topk: int = 10) -> pd.DataFrame:
     """Entry point chamado pelo CLI."""
-
     console.print("\n[bold cyan]Fase 5 — Benchmark de Retrieval[/bold cyan]\n")
+    corpus, queries_raw, corpus_ids, Q, N, D = _load_retrieval_inputs()
+    tasks  = _build_variant_tasks()
+    rows, per_query_ranks = _eval_all_variants(
+        tasks, Q, corpus_ids, queries_raw, topk, N, D
+    )
+    df = _sort_results(pd.DataFrame(rows))
+    _save_retrieval_results(df, per_query_ranks, queries_raw, Q)
+    _print_table(df)
+    Path("charts").mkdir(exist_ok=True)
+    _plot_recall_vs_bits(df)
+    _plot_tradeoff(df)
+    return df
 
-    # ── Carrega dados ──────────────────────────────────────────────────────────
-    corpus = [json.loads(l) for l in Path("data/corpus.jsonl").read_text().splitlines()]
-    queries_raw = [json.loads(l) for l in Path("data/queries.jsonl").read_text().splitlines()]
-    corpus_ids = [d["id"] for d in corpus]
-    N, D = len(corpus), np.load("embeddings/baseline_f32.npy").shape[1]
 
+def _load_retrieval_inputs() -> tuple[
+    list[dict], list[dict], list[str], np.ndarray, int, int
+]:
+    """Carrega corpus, queries e embeda queries. Retorna (corpus, raw, ids, Q, N, D)."""
+    corpus      = [json.loads(line) for line in
+                   Path("data/corpus.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    queries_raw = [json.loads(line) for line in
+                   Path("data/queries.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    corpus_ids  = [d["id"] for d in corpus]
+    N, D = len(corpus), int(np.load("embeddings/baseline_f32.npy").shape[1])
     console.print(f"  Corpus : {N} chunks  |  dim={D}")
     console.print(f"  Queries: {len(queries_raw)}")
-
-    q_texts   = [q["query"]        for q in queries_raw]
-    q_relevant = [q["relevant_ids"] for q in queries_raw]
-
-    # ── Embeda queries ─────────────────────────────────────────────────────────
-    Q = embed_queries(q_texts)
+    Q = embed_queries([q["query"] for q in queries_raw])
     console.print()
+    return corpus, queries_raw, corpus_ids, Q, N, D
 
-    # ── Lista de variantes a avaliar ───────────────────────────────────────────
-    tasks: list[tuple[str, int, Path]] = []
 
+def _build_variant_tasks() -> list[tuple[str, int, Path]]:
+    """Monta lista de (variant, bits, index_path); constrói índices se necessário."""
     f32_path = Path("indexes/faiss_f32.index")
-    f16_path = Path("indexes/faiss_f16.index")
-
     if not f32_path.exists():
         console.print("[yellow]  Índices não encontrados. Construindo agora…[/yellow]")
         from src.retrieval.faiss_store import build_all_indexes
         build_all_indexes()
         console.print()
-
-    tasks.append(("baseline_f32", 32, f32_path))
-    tasks.append(("baseline_f16", 16, f16_path))
+    tasks: list[tuple[str, int, Path]] = [
+        ("baseline_f32", 32, f32_path),
+        ("baseline_f16", 16, Path("indexes/faiss_f16.index")),
+    ]
     for v in VARIANTS:
         for b in BITS:
             tasks.append((v, b, Path(f"indexes/faiss_{v}_{b}bit.index")))
+    return tasks
 
-    # ── Avalia cada variante ───────────────────────────────────────────────────
+
+def _eval_all_variants(
+    tasks: list[tuple[str, int, Path]],
+    Q: np.ndarray,
+    corpus_ids: list[str],
+    queries_raw: list[dict],
+    topk: int,
+    N: int,
+    D: int,
+) -> tuple[list[dict], dict[str, list[int]]]:
+    """Avalia cada variante e retorna (rows, per_query_ranks)."""
     rows: list[dict] = []
-    k_max = max(K_LIST + [topk, 50])   # top-50 para ranks detalhados
-    per_query_ranks: dict[str, list[int]] = {}  # chave = "variant_bits"
+    per_query_ranks: dict[str, list[int]] = {}
+    k_max      = max(K_LIST + [topk, 50])
+    q_relevant = [q["relevant_ids"] for q in queries_raw]
+    f32_mb     = _embed_size_mb("baseline_f32", 32, N, D)
 
     for variant, bits, index_path in track(tasks, description="Avaliando variantes…"):
         if not index_path.exists():
             console.print(f"  [yellow]⚠ {index_path.name} não encontrado — pulando[/yellow]")
             continue
-
-        index = load_index(index_path)
-
-        # Resultados
+        index     = load_index(index_path)
         retrieved = _search_index(index, Q, k_max, corpus_ids)
 
-        # Rank por query (posição do 1º relevante; 9999 se não encontrado no top-50)
-        key = f"{variant}_{bits}"
-        ranks: list[int] = []
-        for ret, rel in zip(retrieved, q_relevant):
-            rel_set = set(rel)
-            rank = next((r + 1 for r, d in enumerate(ret) if d in rel_set), 9999)
-            ranks.append(rank)
+        key   = f"{variant}_{bits}"
+        ranks = [next((r + 1 for r, d in enumerate(ret) if d in set(rel)), 9999)
+                 for ret, rel in zip(retrieved, q_relevant, strict=True)]
         per_query_ranks[key] = ranks
 
-        # Métricas de qualidade
         row: dict = {"variant": variant, "bits": bits}
         for k in K_LIST:
             row[f"recall_at_{k}"] = round(recall_at_k(retrieved, q_relevant, k), 4)
-        row["mrr"] = round(mrr(retrieved, q_relevant), 4)
-
-        # Latência
-        lat = mean_latency_ms(
-            lambda q, k: index.search(q, k),
-            Q, k=topk, n_runs=5,
+        row["mrr"]        = round(mrr(retrieved, q_relevant), 4)
+        _idx = index
+        row["latency_ms"] = round(
+            mean_latency_ms(lambda q, kk, _i=_idx: _i.search(q, kk), Q, k=topk, n_runs=5), 4
         )
-        row["latency_ms"] = round(lat, 4)
-
-        # Tamanhos
-        row["index_size_mb"]  = round(index_path.stat().st_size / 1_048_576, 4)
-        row["embed_size_mb"]  = round(_embed_size_mb(variant, bits, N, D), 4)
-        f32_mb = _embed_size_mb("baseline_f32", 32, N, D)
+        row["index_size_mb"]      = round(index_path.stat().st_size / 1_048_576, 4)
+        row["embed_size_mb"]      = round(_embed_size_mb(variant, bits, N, D), 4)
         row["compression_vs_f32"] = round(f32_mb / row["embed_size_mb"], 2)
-
         rows.append(row)
 
-    df = pd.DataFrame(rows)
+    return rows, per_query_ranks
 
-    # Ordena
+
+def _sort_results(df: pd.DataFrame) -> pd.DataFrame:
+    """Ordena por grupo de variante e bits decrescente."""
     order_map = {"baseline_f32": 0, "baseline_f16": 1,
                  "uniform": 2, "lloyd_max": 3, "turbo_mse": 4, "turbo_prod": 5}
     df["_ord"] = df["variant"].map(order_map).fillna(99)
-    df = df.sort_values(["_ord", "bits"], ascending=[True, False]).drop(columns="_ord")
-    df = df.reset_index(drop=True)
+    return (df.sort_values(["_ord", "bits"], ascending=[True, False])
+              .drop(columns="_ord").reset_index(drop=True))
 
-    # ── Salva CSVs ─────────────────────────────────────────────────────────────
+
+def _save_retrieval_results(
+    df: pd.DataFrame,
+    per_query_ranks: dict[str, list[int]],
+    queries_raw: list[dict],
+    Q: np.ndarray,
+) -> None:
+    """Persiste CSVs e embeddings das queries em disco."""
     Path("reports").mkdir(exist_ok=True)
     csv_path = Path("reports/benchmark_results.csv")
     df.to_csv(csv_path, index=False)
     console.print(f"\n[green]✓ CSV salvo:[/green] {csv_path}  ({len(df)} linhas)")
 
-    # Salva ranks por query para relatório e gráfico 7
-    ranks_df = pd.DataFrame(per_query_ranks)
-    ranks_df["query"] = [q["query"][:80] for q in queries_raw]
+    ranks_df                = pd.DataFrame(per_query_ranks)
+    ranks_df["query"]       = [q["query"][:80]      for q in queries_raw]
     ranks_df["relevant_id"] = [q["relevant_ids"][0] for q in queries_raw]
     ranks_path = Path("reports/per_query_ranks.csv")
     ranks_df.to_csv(ranks_path, index=False)
     console.print(f"[green]✓ CSV salvo:[/green] {ranks_path}  ({len(ranks_df)} linhas)\n")
 
-    # Salva query embeddings para reutilização
     np.save("embeddings/query_embeddings.npy", Q)
-    console.print(f"[green]✓ Query embeddings salvos:[/green] embeddings/query_embeddings.npy\n")
-
-    # ── Exibe tabela ───────────────────────────────────────────────────────────
-    _print_table(df)
-
-    # ── Gráficos ───────────────────────────────────────────────────────────────
-    Path("charts").mkdir(exist_ok=True)
-    _plot_recall_vs_bits(df)
-    _plot_tradeoff(df)
-
-    return df
-
-
+    console.print("[green]✓ Query embeddings salvos:[/green] embeddings/query_embeddings.npy\n")
 # ── Exibição ───────────────────────────────────────────────────────────────────
 
 def _print_table(df: pd.DataFrame) -> None:
@@ -289,9 +297,9 @@ def _plot_recall_vs_bits(df: pd.DataFrame) -> None:
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.5), sharey=False)
     k_vals = [1, 5, 10]
 
-    for ax, k in zip(axes, k_vals):
+    for ax, k in zip(axes, k_vals, strict=True):
         col = f"recall_at_{k}"
-        for var, color, label in zip(variants, colors, labels):
+        for var, color, label in zip(variants, colors, labels, strict=True):
             sub = df[df["variant"] == var].set_index("bits")
             ys = [sub.loc[b, col] if b in sub.index else float("nan") for b in bits_list]
             ax.plot(bits_list, ys, marker="o", color=color, label=label, linewidth=2)
@@ -326,7 +334,6 @@ def _plot_tradeoff(df: pd.DataFrame) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import numpy as np
 
     variants = ["baseline_f32", "baseline_f16", "uniform", "lloyd_max", "turbo_mse", "turbo_prod"]
     colors   = ["black", "gray", "#4878CF", "#6ACC65", "#D65F5F", "#B47CC7"]
@@ -337,7 +344,7 @@ def _plot_tradeoff(df: pd.DataFrame) -> None:
     # Coleta todos os pontos para fronteira de Pareto
     all_pts: list[tuple[float, float]] = []
 
-    for var, color, marker in zip(variants, colors, markers):
+    for var, color, marker in zip(variants, colors, markers, strict=True):
         sub = df[df["variant"] == var]
         if sub.empty:
             continue
@@ -347,7 +354,7 @@ def _plot_tradeoff(df: pd.DataFrame) -> None:
 
         ax.scatter(xs, ys, color=color, marker=marker, s=80, zorder=5, label=var.replace("baseline_", ""))
 
-        for x, y, b in zip(xs, ys, bits_vals):
+        for x, y, b in zip(xs, ys, bits_vals, strict=True):
             label_txt = f"{b}b" if var not in ("baseline_f32", "baseline_f16") else var.replace("baseline_", "")
             ax.annotate(
                 label_txt, (x, y),
@@ -365,7 +372,7 @@ def _plot_tradeoff(df: pd.DataFrame) -> None:
             pareto.append((x, y))
             best_y = y
     if len(pareto) > 1:
-        px, py = zip(*pareto)
+        px, py = zip(*pareto, strict=False)
         ax.step(px, py, where="post", color="orange", linewidth=1.5,
                 linestyle="--", label="Fronteira de Pareto", zorder=3)
 

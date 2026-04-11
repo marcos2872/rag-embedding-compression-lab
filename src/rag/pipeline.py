@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from rich.console import Console
@@ -101,7 +100,7 @@ class RAGPipeline:
         scores, indices = self.index.search(q_vec, k)
 
         results = []
-        for rank, (score, idx) in enumerate(zip(scores[0], indices[0]), start=1):
+        for rank, (score, idx) in enumerate(zip(scores[0], indices[0], strict=True), start=1):
             if idx < 0 or idx >= len(self.corpus):
                 continue
             doc = self.corpus[idx]
@@ -126,8 +125,8 @@ class RAGPipeline:
         self,
         query: str,
         k: int = 5,
-        llm_backend: Optional[str] = None,
-        llm_model: Optional[str] = None,
+        llm_backend: str | None = None,
+        llm_model: str | None = None,
     ) -> dict:
         """
         Executa o pipeline completo e retorna um dict com todos os detalhes.
@@ -159,16 +158,17 @@ class RAGPipeline:
 
 # ── Carregamento compartilhado ─────────────────────────────────────────────────
 
-def _load_shared(model_name: Optional[str] = None, device: Optional[str] = None):
+def _load_shared(model_name: str | None = None, device: str | None = None):
     """Carrega corpus e modelo uma única vez para uso por múltiplos pipelines."""
     import yaml
     from dotenv import load_dotenv
     load_dotenv()
 
     corpus_path = os.getenv("CORPUS_PATH", "data/corpus.jsonl")
-    corpus = [json.loads(l) for l in Path(corpus_path).read_text().splitlines()]
+    corpus = [json.loads(line) for line in Path(corpus_path).read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    cfg = yaml.safe_load(open("configs/embedding.yaml")) or {}
+    with open("configs/embedding.yaml") as _f:
+        cfg = yaml.safe_load(_f) or {}
     mname  = model_name or os.getenv("EMBEDDING_MODEL") or cfg.get("model", "BAAI/bge-small-en-v1.5")
     device = device or os.getenv("EMBEDDING_DEVICE", "cpu")
 
@@ -185,14 +185,14 @@ def run_demo(
     query: str,
     variants: list[str],
     k: int = 5,
-    llm_backend: Optional[str] = None,
-    llm_model: Optional[str] = None,
+    llm_backend: str | None = None,
+    llm_model: str | None = None,
 ) -> None:
     """
     Executa o demo RAG para múltiplas variantes e exibe comparação.
     Chamado pelo comando `make rag-demo QUERY="..."`.
     """
-    console.print(f"\n[bold cyan]RAG Demo — Fase 7[/bold cyan]\n")
+    console.print("\n[bold cyan]RAG Demo — Fase 7[/bold cyan]\n")
     console.print(Panel(f"[bold]{query}[/bold]", title="Query", border_style="cyan"))
     console.print()
 
@@ -212,12 +212,13 @@ def run_demo(
         return
 
     # Executa cada pipeline
-    # Pequena pausa entre chamadas para evitar rate-limit em APIs com tier gratuito
+    # Pausa entre chamadas apenas para backends com rate-limit (ollama/openai)
     import time
+    _rate_limited_backends = ("ollama", "openai")
     all_results: dict[str, dict] = {}
     for i, (v, pipe) in enumerate(pipelines.items()):
-        if i > 0:
-            time.sleep(1.5)   # 1.5s entre chamadas — suficiente para a maioria dos free-tiers
+        if i > 0 and (llm_backend or "") in _rate_limited_backends:
+            time.sleep(1.5)   # 1.5s entre chamadas — evita rate-limit em free-tiers
         console.print(f"  [cyan]Buscando:[/cyan] {v}…")
         all_results[v] = pipe.answer(query, k=k, llm_backend=llm_backend, llm_model=llm_model)
 

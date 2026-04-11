@@ -92,35 +92,8 @@ def _dequantize_variant(variant: str, bits: int) -> np.ndarray | None:
     Carrega e dequantiza uma variante específica.
     Retorna array [N, D] float32 ou None se o arquivo não existir.
     """
-    path = Path(f"embeddings/{variant}_{bits}bit.npz")
-    if not path.exists():
-        return None
-
-    if variant == "uniform":
-        from src.quantization.storage import load_uniform
-        from src.quantization.scalar_uniform import dequantize_uniform
-        idx, norms, state = load_uniform(path)
-        return dequantize_uniform(idx, state)
-
-    elif variant == "lloyd_max":
-        from src.quantization.storage import load_lloyd
-        from src.quantization.lloyd_max import dequantize_lloyd
-        idx, norms, cb = load_lloyd(path)
-        return dequantize_lloyd(idx, cb)
-
-    elif variant == "turbo_mse":
-        from src.quantization.storage import load_turbo_mse
-        from src.quantization.turboquant_mse import dequantize_mse_batch
-        idx, norms, state = load_turbo_mse(path)
-        return dequantize_mse_batch(idx, norms, state)
-
-    elif variant == "turbo_prod":
-        from src.quantization.storage import load_turbo_prod
-        from src.quantization.turboquant_prod import dequantize_prod_batch
-        idx, norms, signs, gammas, state = load_turbo_prod(path)
-        return dequantize_prod_batch(idx, norms, signs, gammas, state)
-
-    return None
+    from src.quantization.loader import load_and_dequantize
+    return load_and_dequantize(variant, bits)
 
 
 # ── Query matrix ───────────────────────────────────────────────────────────────
@@ -254,7 +227,7 @@ def run_distortion_bench() -> pd.DataFrame:
     console.print(f"  Embeddings: {X_orig.shape}  dtype={X_orig.dtype}")
 
     # Constrói query matrix
-    seed = int(os.getenv("RANDOM_SEED", 42))
+    seed = int(os.getenv("RANDOM_SEED", "42"))
     Q = build_query_matrix(X_orig, seed=seed)
     console.print()
 
@@ -338,11 +311,11 @@ def _plot_mse_vs_bits(df: pd.DataFrame) -> None:
     width  = 0.18
     fig, ax = plt.subplots(figsize=(9, 5))
 
-    for i, (var, color, label) in enumerate(zip(variants, colors, labels)):
+    for i, (var, color, label) in enumerate(zip(variants, colors, labels, strict=True)):
         sub = df[df["variant"] == var].set_index("bits")
         vals = [sub.loc[b, "mse"] if b in sub.index else np.nan for b in bits_list]
         offset = (i - 1.5) * width
-        bars = ax.bar(x + offset, vals, width, label=label, color=color, alpha=0.85, edgecolor="white")
+        ax.bar(x + offset, vals, width, label=label, color=color, alpha=0.85, edgecolor="white")
 
     # Baselines como linhas horizontais
     f16_mse = df[df["variant"] == "baseline_f16"]["mse"].values
@@ -393,8 +366,8 @@ def _plot_ip_heatmap(df: pd.DataFrame) -> None:
     data_norm = np.zeros_like(data, dtype=float)
     for i in range(data.shape[0]):
         row = data[i]
-        rng = row.max() - row.min()
-        data_norm[i] = (row - row.min()) / rng if rng > 0 else np.zeros_like(row)
+        val_range = row.max() - row.min()
+        data_norm[i] = (row - row.min()) / val_range if val_range > 0 else np.zeros_like(row)
 
     im = ax.imshow(data_norm, cmap="RdYlGn_r", aspect="auto", vmin=0, vmax=1)
 
