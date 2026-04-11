@@ -86,6 +86,7 @@ rag-embedding-compression-lab/
 │   │   ├── turboquant_mse.py       # Variante C: rotação + Lloyd-Max
 │   │   ├── turboquant_prod.py      # Variante D: rotação + Lloyd-Max + QJL
 │   │   ├── rotation.py             # Geração de matriz ortogonal aleatória (QR)
+│   │   ├── loader.py              # Centraliza load_and_dequantize para todas as variantes
 │   │   └── storage.py             # Bit-packing, serialização e deserialização
 │   │
 │   ├── retrieval/
@@ -103,7 +104,9 @@ rag-embedding-compression-lab/
 │   │
 │   └── visualization/
 │       ├── plots.py                # Fase 6: 8 gráficos estáticos (matplotlib)
-│       └── dashboard.py           # Fase 6: dashboard interativo HTML (plotly)
+│       ├── _dashboard_figs.py      # Fase 6: figuras Plotly do dashboard
+│       ├── _dashboard_html.py      # Fase 6: template HTML e montagem do dashboard
+│       └── dashboard.py           # Fase 6: orquestra → gera charts/dashboard.html
 │
 ├── reports/
 │   ├── benchmark_results.csv       # Recall@k, MRR, latência, compressão por variante
@@ -234,14 +237,19 @@ Arquivo `.env` (copie de `.env.example`):
 | `read_txt(path)`    | Lê arquivo `.txt` inteiro como bloco único.                                                  |
 | `read_md(path)`     | Lê arquivo `.md` e remove marcações Markdown (headers, bold, links, code blocks, tabelas). |
 | `_strip_markdown()` | Remove sintaxe Markdown preservando o conteúdo textual. Headers `##` → texto puro, bold `**` → texto, etc. |
-| `_make_id()`        | Gera ID único no formato `<stem>-p<page>-c<chunk_idx>`. Ex: `rag-systems-p00-c03`.         |
+| `_make_id()`        | Gera ID no formato `<stem>-p<page>-c<chunk_idx>` com 4 dígitos no índice (ex: `rag-systems-p00-c0003`). |
 | `ingest()`          | **Pipeline principal**: varre diretório, lê arquivos, aplica chunking, salva `corpus.jsonl` e `processed/*.jsonl`. |
-| `load_corpus()`     | Utilitário: carrega `corpus.jsonl` e retorna lista de dicts.                                |
+| `_process_single_file()` | Leitura e chunking de um único arquivo. Retorna lista de dicts ou `None` em caso de erro. |
+| `_write_jsonl()`    | Escreve lista de dicts em formato JSONL. |
+| `load_corpus()`     | Utilitário: carrega `corpus.jsonl` e retorna lista de dicts. |
+| `queries_first_sentence()` | Para cada chunk, extrai a primeira frase como query. Filtra duplicadas e muito curtas. |
+| `_extract_first_sentence()` | Extrai e limpa a primeira frase de um texto. |
+| `queries_pseudo()`  | Pseudo ground truth via embedding f32 + FAISS top-k. Fallback para `first_sentence` se embeddings não existirem. |
 
 **Formato de cada chunk no corpus.jsonl:**
 ```json
 {
-  "id": "rag-systems-overview-p00-c03",
+  "id": "rag-systems-overview-p00-c0003",
   "text": "texto do chunk aqui...",
   "metadata": {
     "source": "rag-systems-overview.md",
@@ -433,6 +441,15 @@ Com packing: 4 índices 2-bit por byte → dim=384 → 96 bytes/vetor = 16× com
 
 ---
 
+### `src/quantization/loader.py` — Dequantização Centralizada
+**O que é:** Módulo criado para eliminar duplicação entre `benchmark/distortion.py` e `retrieval/faiss_store.py`.
+
+| Função | Descrição |
+|---|---|
+| `load_and_dequantize(variant, bits)` | Carrega `.npz`, dequantiza e retorna `[N, D] float32`. Retorna `None` se o arquivo não existir. |
+
+---
+
 ### `src/benchmark/retrieval_bench.py` — Benchmark de Retrieval (Fase 5)
 **O que é:** Avaliação completa: embeda queries → busca em todos os índices → calcula métricas.
 
@@ -441,7 +458,12 @@ Com packing: 4 índices 2-bit por byte → dim=384 → 96 bytes/vetor = 16× com
 | `embed_queries(query_texts)` | Embeda textos das queries com o mesmo modelo do corpus, com normalização.              |
 | `_embed_size_mb(variant, bits, N, D)` | Calcula tamanho teórico dos dados de embedding por variante (sem R/S). Métrica de produção. |
 | `_search_index(index, Q, k, corpus_ids)` | Busca top-k e mapeia índices FAISS → IDs do corpus.                         |
-| `run_retrieval_bench(topk)`  | **Entry point**: carrega dados → embeda queries → avalia cada variante → salva CSVs → gera gráficos. |
+| `_load_retrieval_inputs()` | Carrega corpus, queries e embeda queries. Retorna `(corpus, raw, ids, Q, N, D)`.         |
+| `_build_variant_tasks()` | Monta lista `(variant, bits, index_path)`. Constrói índices se ausentes.                  |
+| `_eval_all_variants(...)` | Avalia cada variante: busca, métricas de qualidade e latência.                           |
+| `_sort_results(df)` | Ordena DataFrame por grupo de variante e bits decrescente.                                |
+| `_save_retrieval_results(...)` | Persiste CSVs e embeddings das queries em disco.                                     |
+| `run_retrieval_bench(topk)`  | **Entry point**: orquestra todos os helpers → salva CSVs → gera gráficos.             |
 
 **Saídas:**
 - `reports/benchmark_results.csv` — Recall@1/5/10, MRR, latência, tamanho, compressão

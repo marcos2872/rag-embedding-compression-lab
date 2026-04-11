@@ -77,7 +77,7 @@ cada uma adicionando um componente sobre a anterior:
 
 **`lloyd_max`** — em vez de bins iguais, usa o algoritmo Lloyd-Max para encontrar os `2^b` centróides que minimizam o MSE para a distribuição teórica de uma coordenada de vetor unitário em S^(d−1). Essa distribuição é uma Beta(191.5, 191.5) — extremamente concentrada em torno de zero para dim=384.
 
-**`turbo_mse`** _(TurboQuantMSE, baseado no paper TurboQuant)_ — aplica uma **rotação ortogonal aleatória** ao vetor antes de quantizar. A rotação redistribui a energia uniformemente entre todas as dimensões, fazendo com que cada coordenada siga exatamente a distribuição teórica para a qual o codebook Lloyd-Max foi projetado. O resultado: 33× menos MSE que o lloyd_max puro no mesmo nível de bits.
+**`turbo_mse`** _(TurboQuantMSE, baseado no paper TurboQuant)_ — aplica uma **rotação ortogonal aleatória** ao vetor antes de quantizar. A rotação redistribui a energia uniformemente entre todas as dimensões, fazendo com que cada coordenada siga exatamente a distribuição teórica para a qual o codebook Lloyd-Max foi projetado. O resultado: ~11× menos MSE que o lloyd_max puro no mesmo nível de bits.
 
 **`turbo_prod`** _(TurboQuantProd)_ — estende o MSE adicionando um segundo passo: quantiza o **resíduo** (vetor original − reconstrução MSE) com 1 bit por dimensão usando o estimador JL quantizado (QJL). Isso remove o viés sistemático que o TurboQuantMSE introduz nos produtos internos.
 
@@ -283,31 +283,31 @@ Pontos-chave das garantias:
   <img src="charts/recall_vs_bits.png" width="900" alt="Recall@1, @5, @10 vs Bits"/>
   <br/>
   <em>Cada painel mostra uma profundidade de corte (k=1, 5, 10). Linhas tracejadas = baselines float32 e float16.
-  <br/>Modelo: BAAI/bge-small-en-v1.5 · Corpus: 556 chunks · 200 queries (first_sentence).</em>
+  <br/>Modelo: BAAI/bge-small-en-v1.5 · Corpus: 591 chunks · 200 queries (first_sentence).</em>
 </p>
 
 Os números completos:
 
 | Variante | Bits | R@1 | R@5 | R@10 | MRR | Compressão |
 |---|---:|---:|---:|---:|---:|---:|
-| `baseline_f32` | 32 | 0.830 | 0.940 | **0.945** | 0.884 | 1× |
-| `baseline_f16` | 16 | 0.830 | 0.940 | **0.945** | 0.884 | 2× |
-| `uniform` | 8 | 0.830 | 0.940 | **0.945** | 0.886 | 3.98× |
-| `uniform` | 4 | 0.760 | 0.855 | 0.905 | 0.813 | 7.92× |
-| `uniform` | **2** | **0.030** | **0.105** | **0.120** | **0.064** | 15.67× |
-| `lloyd_max` | 8 | 0.820 | 0.925 | 0.950 | 0.869 | 3.98× |
-| `lloyd_max` | 4 | 0.795 | 0.930 | 0.940 | 0.858 | 7.92× |
-| `lloyd_max` | 2 | 0.790 | 0.920 | 0.930 | 0.843 | 15.67× |
-| `turbo_mse` | 8 | 0.825 | 0.940 | **0.945** | 0.882 | 3.98× |
-| **`turbo_mse`** | **4** | **0.840** | **0.930** | **0.940** | **0.886** | **7.92×** |
-| `turbo_mse` | 2 | 0.775 | 0.900 | 0.935 | 0.829 | 15.67× |
-| `turbo_prod` | 8 | 0.820 | 0.940 | 0.950 | 0.881 | 3.96× |
-| `turbo_prod` | 4 | 0.810 | 0.910 | 0.940 | 0.862 | 7.84× |
-| `turbo_prod` | 2 | 0.635 | 0.825 | 0.860 | 0.722 | 15.36× |
+| `baseline_f32` | 32 | 0.795 | 0.895 | **0.935** | 0.844 | 1× |
+| `baseline_f16` | 16 | 0.795 | 0.895 | **0.935** | 0.844 | 2× |
+| `uniform` | 8 | 0.800 | 0.895 | **0.935** | 0.845 | 3.98× |
+| `uniform` | 4 | 0.725 | 0.875 | 0.915 | 0.793 | 7.92× |
+| `uniform` | **2** | **0.155** | **0.320** | **0.425** | **0.244** | 15.67× |
+| `lloyd_max` | 8 | 0.770 | 0.905 | 0.935 | 0.831 | 3.98× |
+| `lloyd_max` | 4 | 0.770 | 0.900 | 0.930 | 0.830 | 7.92× |
+| `lloyd_max` | 2 | 0.765 | 0.895 | 0.920 | 0.827 | 15.67× |
+| `turbo_mse` | 8 | 0.800 | 0.895 | 0.930 | 0.846 | 3.98× |
+| **`turbo_mse`** | **4** | **0.795** | **0.890** | **0.925** | **0.841** | **7.92×** |
+| `turbo_mse` | 2 | 0.725 | 0.895 | 0.925 | 0.797 | 15.67× |
+| `turbo_prod` | 8 | 0.805 | 0.895 | 0.935 | 0.850 | 3.96× |
+| `turbo_prod` | 4 | 0.755 | 0.885 | 0.915 | 0.814 | 7.84× |
+| `turbo_prod` | 2 | 0.640 | 0.845 | 0.875 | 0.725 | 15.36× |
 
-**O sweet spot é `turbo_mse 4-bit`**: Recall@10 = 0.940 (vs 0.945 do float32, Δ = −0.5pp) com **7.92× menos memória**.
+**O sweet spot é `turbo_mse 4-bit`**: Recall@10 = 0.925 (vs 0.935 do float32, Δ = −1.0 pp) com **7.92× menos memória**.
 
-> 💡 **Observação importante:** `uniform 2-bit` colapsa completamente com Recall@10 = 0.120 — uma queda de 82.5 pontos percentuais. Não é um método viável para produção sem rotação.
+> 💡 **Observação importante:** `uniform 2-bit` cai para Recall@10 = 0.425 — uma queda de 51.0 pontos percentuais. `turbo_mse 2-bit` alcança 0.925 no mesmo nível de compressão (15.7×), demonstrando que **a rotação é indispensável a 2-bit**.
 
 ---
 
@@ -323,10 +323,10 @@ O MSE revela um resultado contraintuitivo: `lloyd_max` **sem rotação** tem MSE
 
 | Variante | 4-bit MSE | Cosine Error | vs turbo_mse |
 |---|---:|---:|---:|
-| `uniform_4bit` | 0.000320 | 0.0562 | 11× pior |
-| `lloyd_max_4bit` | 0.000412 | 0.0764 | 17× pior |
-| **`turbo_mse_4bit`** | **0.0000244** | **0.0047** | — |
-| `turbo_prod_4bit` | 0.000140 | 0.0258 | 5.7× pior |
+| `uniform_4bit` | 0.000299 | 0.0528 | 10.3× pior |
+| `lloyd_max_4bit` | 0.000310 | 0.0557 | 10.7× pior |
+| **`turbo_mse_4bit`** | **0.000029** | **0.0055** | — |
+| `turbo_prod_4bit` | 0.000155 | 0.0282 | 5.3× pior |
 
 **Por quê?**
 
@@ -339,7 +339,7 @@ Com a rotação ortogonal aleatória `y = R @ x`, a energia é redistribuída: c
 <p align="center">
   <img src="charts/memory_compression.png" width="780" alt="Tamanho dos embeddings por variante"/>
   <br/>
-  <em>Tamanho real em MB dos dados de embedding para N=556 vetores, dim=384, com bit-packing correto.
+  <em>Tamanho real em MB dos dados de embedding para N=591 vetores, dim=384, com bit-packing correto.
   <br/>A cor indica a taxa de compressão (verde = maior compressão).</em>
 </p>
 
@@ -360,11 +360,11 @@ A busca por similaridade calcula produtos internos entre queries e documentos. M
 
 O heatmap mostra três comportamentos distintos:
 
-**`lloyd_max` sem rotação** tem **IP Bias = −0.239** a 4-bit — o maior viés de todos. O codebook clipa coordenadas fora do range `[−0.189, +0.189]`, gerando um viés negativo constante em todos os produtos internos. Curiosamente, mesmo com esse viés alto, o retrieval funciona bem (R@10 = 0.940) porque o viés afeta todos os documentos igualmente, preservando o ranking relativo.
+**`lloyd_max` sem rotação** tem **IP Bias = −0.205** a 4-bit — o maior viés de todos. O codebook clipa coordenadas fora do range `[−0.139, +0.139]`, gerando um viés negativo constante em todos os produtos internos. Curiosamente, mesmo com esse viés alto, o retrieval funciona bem (R@10 = 0.930) porque o viés afeta todos os documentos igualmente, preservando o ranking relativo.
 
-**`turbo_mse`** elimina o viés com a rotação: **IP Bias = −0.0070** a 4-bit, 34× menor que o lloyd_max. A rotação garante que nenhuma coordenada sistematicamente exceda o range do codebook.
+**`turbo_mse`** elimina o viés com a rotação: **IP Bias = −0.011** a 4-bit, ~19× menor que o lloyd_max. A rotação garante que nenhuma coordenada sistematicamente exceda o range do codebook.
 
-**`turbo_prod`** vai além: o QJL produz uma estimativa não viciada do resíduo `r = y − ŷ`, reduzindo o IP Bias para **+0.001** a 4-bit — praticamente zero. O custo são apenas 48 bytes extras por vetor (1 bit × 384 dimensões empacotado) para armazenar o sinal de cada projeção gaussiana.
+**`turbo_prod`** vai além: o QJL produz uma estimativa não viciada do resíduo `r = y − ŷ`, reduzindo o IP Bias para **+0.003** a 4-bit — praticamente zero. O custo são apenas 48 bytes extras por vetor (1 bit × 384 dimensões empacotado) para armazenar o sinal de cada projeção gaussiana.
 
 ---
 
@@ -394,10 +394,10 @@ A distribuição revela que a degradação com `uniform 2-bit` não é gradual �
 
 O gráfico dual-axis torna a decisão de engenharia visual e objetiva:
 
-- **`uniform 2-bit`**: 15.7× de compressão com **−82.5 pp** de queda. Inútil.
+- **`uniform 2-bit`**: 15.7× de compressão com **−51.0 pp** de queda. Inviável para produção.
 - **`turbo_mse 2-bit`**: 15.7× de compressão com apenas **−1.0 pp**. A rotação salva o método.
-- **`turbo_mse 4-bit`**: 7.9× de compressão com **−0.5 pp**. Sweet spot.
-- **`turbo_mse 8-bit`**: 4.0× de compressão com **0.0 pp**. Conservador, seguro.
+- **`turbo_mse 4-bit`**: 7.9× de compressão com **−1.0 pp**. Sweet spot.
+- **`turbo_mse 8-bit`**: 4.0× de compressão com **−0.5 pp**. Conservador, seguro.
 
 Para sistemas que aceitam até 2 pp de degradação, `turbo_mse 2-bit` oferece a melhor relação custo-benefício com **15.7× de compressão**.
 
@@ -416,11 +416,11 @@ Comparando f32, turbo_mse_4bit e uniform_2bit:
 ```
 Rank  float32                         turbo_mse_4bit                  uniform_2bit
 ────────────────────────────────────────────────────────────────────────────────────
- 1    0.795 · redis-guide-p00-c32     0.787 · redis-guide-p00-c32     0.790 · redis-guide-p00-c34  ← certo
- 2    0.794 · redis-guide-p00-c30     0.776 · redis-guide-p00-c30     0.738 · redis-guide-p00-c01  ← certo
- 3    0.785 · redis-guide-p00-c31     0.765 · redis-guide-p00-c31     0.718 · redis-guide-p00-c02  ← certo
- 4    0.768 · redis-guide-p00-c01     0.755 · redis-guide-p00-c01     0.715 · redis-guide-p00-c03  ← certo
- 5    0.765 · redis-guide-p00-c33     0.747 · redis-guide-p00-c33     0.713 · PLAN.md-p00-c03      ← ERRADO
+ 1    0.795 · redis-guide-p00-c0032   0.787 · redis-guide-p00-c0032   0.821 · redis-guide-p00-c0028  ← errado
+ 2    0.794 · redis-guide-p00-c0030   0.776 · redis-guide-p00-c0030   0.759 · redis-guide-p00-c0001  ← certo
+ 3    0.785 · redis-guide-p00-c0031   0.765 · redis-guide-p00-c0031   0.736 · redis-guide-p00-c0021  ← errado
+ 4    0.768 · redis-guide-p00-c0001   0.755 · redis-guide-p00-c0001   0.717 · nestjs-guide-p00-c0033 ← ERRADO
+ 5    0.765 · redis-guide-p00-c0033   0.747 · redis-guide-p00-c0033   0.716 · redis-guide-p00-c0027  ← errado
 ```
 
 `turbo_mse_4bit`: 5/5 documentos idênticos ao float32 ✓
@@ -437,10 +437,10 @@ A resposta gerada pelo `uniform_2bit` seria baseada em contexto parcialmente err
 data/raw/*.{pdf,md,txt}
         │
         ▼  Fase 1: src/ingest.py + src/chunking.py
-data/corpus.jsonl (556 chunks)
+data/corpus.jsonl (591 chunks)
         │
         ▼  Fase 2: src/embed.py  [BAAI/bge-small-en-v1.5, local]
-embeddings/baseline_f32.npy  [556 × 384, norma=1.0]
+embeddings/baseline_f32.npy  [591 × 384, norma=1.0]
         │
         ▼  Fase 3: src/quantization/
    ┌────┴──────────────────────────────────┐
@@ -471,7 +471,7 @@ cd rag-embedding-compression-lab
 make setup          # uv sync + cria .env + cria pastas
 
 # 2. Pipeline completo (Fases 1–6)
-make ingest         # corpus.jsonl com 556 chunks
+make ingest         # corpus.jsonl com 591 chunks
 make queries        # 200 queries (first_sentence)
 make embed          # embeddings float32 e float16  (~30s na CPU)
 make quantize-all   # 12 variantes quantizadas       (~10s)
@@ -497,11 +497,11 @@ cat HOWTO.md
 
 | Pergunta | Resposta |
 |---|---|
-| Qual o sweet spot? | `turbo_mse 4-bit`: 7.9× compressão, Recall@10 idêntico ao float32 |
+| Qual o sweet spot? | `turbo_mse 4-bit`: 7.9× compressão, Recall@10 = 0.925 (vs 0.935 do f32, Δ = −1.0 pp) |
 | Menor compressão viável? | `turbo_mse 2-bit`: 15.7×, queda de apenas 1.0 pp no Recall@10 |
-| O que não fazer? | `uniform 2-bit`: 15.7×, mas Recall@10 cai de 0.945 para 0.120 |
-| Por que a rotação importa? | lloyd_max sem rotação: MSE 17× maior que turbo_mse com mesmos bits |
-| Latência muda? | Não: ~0.02 ms/query para todas as variantes (índice FAISS sempre em float32) |
+| O que não fazer? | `uniform 2-bit`: 15.7×, mas Recall@10 cai de 0.935 para 0.425 |
+| Por que a rotação importa? | lloyd_max sem rotação: MSE ~11× maior que turbo_mse com mesmos bits |
+| Latência muda? | Não: ~0.005 ms/query para todas as variantes (índice FAISS sempre em float32) |
 
 ---
 

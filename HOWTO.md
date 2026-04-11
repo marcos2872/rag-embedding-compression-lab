@@ -113,7 +113,7 @@ Ingestão: 12 arquivo(s) encontrado(s) em data/raw
   ...
   ✓ vector-embeddings-guide.md                  32 chunks
 
-✓ corpus.jsonl gravado: 556 chunks em data/corpus.jsonl
+✓ corpus.jsonl gravado: 591 chunks em data/corpus.jsonl
 ```
 
 ### 5. Verificar o corpus
@@ -130,7 +130,7 @@ Lista quantos chunks vieram de cada arquivo:
     44 chunks  turboquant-summary.md
     ...
   ────────────────
-   556 total
+   591 total
 ```
 
 ### 6. Gerar as queries
@@ -144,7 +144,7 @@ Usa a estratégia `first_sentence`: extrai a primeira frase de cada chunk como q
 Saída esperada:
 
 ```
-Corpus carregado: 556 chunks
+Corpus carregado: 591 chunks
 
 ✓ queries.jsonl gravado: 200 pares em data/queries.jsonl
 ```
@@ -161,7 +161,7 @@ Cada linha é um JSON com o chunk e seus metadados:
 
 ```jsonl
 {
-  "id": "turboquant-summary-p00-c03",
+  "id": "turboquant-summary-p00-c0003",
   "text": "The core insight of TurboQuant is that combining three components — a random orthogonal rotation, an optimal scalar codebook derived from the unit-sphere coordinate distribution, and bit-packed storage — achieves near-optimal compression quality...",
   "metadata": {
     "source": "turboquant-summary.md",
@@ -174,15 +174,15 @@ Cada linha é um JSON com o chunk e seus metadados:
 
 **Formato do ID:** `<stem-do-arquivo>-p<página>-c<índice-do-chunk>`
 
-- PDFs: `artigo-p03-c01` (página 3, chunk 1)
-- TXT/MD: `documento-p00-c07` (página = 0 pois não há paginação)
+- PDFs: `artigo-p03-c0001` (página 3, chunk 1)
+- TXT/MD: `documento-p00-c0007` (página = 0 pois não há paginação)
 
 ### `data/queries.jsonl`
 
 Cada linha é um par query → lista de IDs relevantes:
 
 ```jsonl
-{"query": "The core insight of TurboQuant is that combining three components...", "relevant_ids": ["turboquant-summary-p00-c03"]}
+{"query": "The core insight of TurboQuant is that combining three components...", "relevant_ids": ["turboquant-summary-p00-c0003"]}
 {"query": "Redis is an open-source, in-memory data structure store...", "relevant_ids": ["redis-guide-p00-c00"]}
 ```
 
@@ -214,7 +214,7 @@ O overlap garante que frases quebradas na fronteira de um chunk apareçam comple
 
 **Parâmetros alternativos dependendo do caso de uso:**
 
-| Caso de uso | chunk_size | chunk_overlap | Chunks esperados (556 docs) |
+| Caso de uso | chunk_size | chunk_overlap | Chunks esperados (591 docs) |
 |---|---|---|---|
 | Lab rápido (padrão) | 64 | 16 | ~550 |
 | RAG de produção | 256 | 32 | ~90 |
@@ -253,7 +253,7 @@ O pipeline detecta a extensão automaticamente. Arquivos com extensões não sup
 
 | Critério | Verificação | Status |
 |---|---|---|
-| `corpus.jsonl` com ≥ 500 chunks | `make ingest-check` mostra total | ✅ 556 chunks |
+| `corpus.jsonl` com ≥ 500 chunks | `make ingest-check` mostra total | ✅ 591 chunks |
 | `queries.jsonl` com ≥ 50 pares | `wc -l data/queries.jsonl` | ✅ 200 pares |
 | Formato correto dos IDs | `head -1 data/corpus.jsonl` | ✅ `<stem>-p<page>-c<idx>` |
 | Arquivos intermediários gerados | `ls data/processed/` | ✅ 12 arquivos `.jsonl` |
@@ -265,9 +265,9 @@ wc -l data/corpus.jsonl data/queries.jsonl
 
 Saída esperada:
 ```
-  556 data/corpus.jsonl
+  591 data/corpus.jsonl
   200 data/queries.jsonl
-  756 total
+  791 total
 ```
 
 ---
@@ -290,7 +290,7 @@ O modelo roda **100% local**, sem chamadas a API. Na primeira execução o model
 A Fase 1 deve estar concluída:
 
 ```bash
-wc -l data/corpus.jsonl   # deve mostrar 556 (ou o total do seu corpus)
+wc -l data/corpus.jsonl   # deve mostrar 591 (ou o total do seu corpus)
 ```
 
 ---
@@ -316,7 +316,7 @@ Saída típica em CPU:
 > **Sobre a AMD RX 580:** a GPU é reconhecida pelo sistema (`/dev/kfd` presente) mas a
 > arquitetura **gfx803 (Polaris)** não é suportada pelo PyTorch ROCm a partir da versão 5.0.
 > O pipeline detecta isso automaticamente e faz fallback para CPU — sem nenhuma configuração extra.
-> Para os 556 chunks do corpus de amostra a inferência leva **~30 segundos na CPU**.
+> Para os 591 chunks do corpus de amostra a inferência leva **~18 segundos na CPU**.
 
 ---
 
@@ -356,21 +356,21 @@ Cache:   ~/.cache/huggingface/hub/
 
 ✓ Modelo carregado em 7.6s
 
-Corpus:  556 chunks  →  9 batches (batch_size=64)
+Corpus:  591 chunks  →  10 batches (batch_size=64)
 
-  Gerando embeddings… ━━━━━━━━━━━━━━━━━━━━━━━━ 556/556 100% 0:00:30
+  Gerando embeddings… ━━━━━━━━━━━━━━━━━━━━━━━━ 591/591 100% 0:00:18
 
-✓ Embeddings gerados  shape=(556, 384)  dtype=float32  tempo=30.8s
-✓ Normalizado: 556/556 vetores com norma≈1.0
+✓ Embeddings gerados  shape=(591, 384)  dtype=float32  tempo=17.5s
+✓ Normalizado: 591/591 vetores com norma≈1.0
 
-✓ Salvo: embeddings/baseline_f32.npy  shape=(556, 384)  dtype=float32  0.81 MB
-✓ Salvo: embeddings/baseline_f16.npy  shape=(556, 384)  dtype=float16  0.41 MB
+✓ Salvo: embeddings/baseline_f32.npy  shape=(591, 384)  dtype=float32  0.87 MB
+✓ Salvo: embeddings/baseline_f16.npy  shape=(591, 384)  dtype=float16  0.43 MB
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
 ┃ Arquivo                 ┃      Shape ┃  dtype  ┃ Tamanho ┃ Compressão vs f32 ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
-│ embeddings/baseline_f32 │ [556, 384] │ float32 │ 0.81 MB │                1× │
-│ embeddings/baseline_f16 │ [556, 384] │ float16 │ 0.41 MB │                2× │
+│ embeddings/baseline_f32 │ [591, 384] │ float32 │ 0.87 MB │                1× │
+│ embeddings/baseline_f16 │ [591, 384] │ float16 │ 0.43 MB │                2× │
 └─────────────────────────┴────────────┴─────────┴─────────┴───────────────────┘
 
 ✓ Fase 2 concluída.
@@ -458,8 +458,8 @@ do chunk na linha `i` de `data/corpus.jsonl`.
 |---|---|---|
 | `baseline_f32.npy` existe | `ls embeddings/` | ✅ 0.81 MB |
 | `baseline_f16.npy` existe | `ls embeddings/` | ✅ 0.41 MB |
-| Shape correta | `[556, 384]` | ✅ |
-| 100% dos vetores com norma≈1.0 | verificação abaixo | ✅ 556/556 |
+| Shape correta | `[591, 384]` | ✅ |
+| 100% dos vetores com norma≈1.0 | verificação abaixo | ✅ 591/591 |
 
 ```bash
 # Verificação rápida:
@@ -474,7 +474,7 @@ print(f'shape={X.shape}  norma≈1.0: {ok}/{len(X)} ({ok/len(X)*100:.1f}%)')
 
 Saída esperada:
 ```
-shape=(556, 384)  norma≈1.0: 556/556 (100.0%)
+shape=(591, 384)  norma≈1.0: 591/591 (100.0%)
 ```
 
 ---
@@ -539,7 +539,7 @@ make quantize-all
 ```
 Quantizando: turbo_mse  bits=4
 
-  Embeddings: 556 vetores × 384 dims  dtype=float32
+  Embeddings: 591 vetores × 384 dims  dtype=float32
 
   Codebook Lloyd-Max: dim=384, bits=4 (16 centróides)…
     Lloyd-Max convergiu em 190 iterações (Δ=0.00e+00)
@@ -549,11 +549,11 @@ Quantizando: turbo_mse  bits=4
 ┃ Métrica             ┃            Valor ┃                     ┃
 ┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
 │ Variante            │   turbo_mse_4bit │                     │
-│ Shape               │      [556, 384] │                     │
+│ Shape               │      [591, 384] │                     │
 │ Bytes/vetor (dados) │           194 B │ (f32=1536 B)         │
 │ Compressão (vetor)  │          7.92× │ dados por vetor      │
 │ MSE                 │        0.000029 │ ↓ melhor             │
-│ Cosine sim médio    │        0.984330 │ ↑ melhor (máx=1.0)   │
+│ Cosine sim médio    │        0.994497 │ ↑ melhor (máx=1.0)   │
 └─────────────────────┴──────────────────┴─────────────────────┘
 
 ✓ embeddings/turbo_mse_4bit.npz
@@ -589,8 +589,8 @@ no mesmo número de bits:
 
 | Variante | bits | Cosine sim | MSE |
 |---|---|---|---|
-| `lloyd_max` (sem rotação) | 4 | 0.787 | 0.000326 |
-| `turbo_mse` (com rotação) | 4 | **0.984** | **0.000029** |
+| `lloyd_max` (sem rotação) | 4 | 0.944 | 0.000310 |
+| `turbo_mse` (com rotação) | 4 | **0.994** | **0.000029** |
 
 O codebook Lloyd-Max é calculado para a distribuição teórica de coordenada em S^(d-1).
 Sem rotação, as coordenadas dos embeddings BGE-small não seguem essa distribuição
@@ -634,7 +634,7 @@ from src.quantization.storage import load_turbo_mse, unpack_indices
 indices, norms, state = load_turbo_mse("embeddings/turbo_mse_4bit.npz")
 from src.quantization.turboquant_mse import dequantize_mse_batch
 X_hat = dequantize_mse_batch(indices, norms, state)
-print(X_hat.shape)   # (556, 384)
+print(X_hat.shape)   # (591, 384)
 ```
 
 ---
@@ -645,9 +645,9 @@ print(X_hat.shape)   # (556, 384)
 |---|---|
 | 12 arquivos `.npz` em `embeddings/` | ✅ |
 | Bit-packing correto (round-trip) | ✅ verificado em testes |
-| `turbo_mse_4bit` cosine sim ≥ 0.98 | ✅ 0.984 |
+| `turbo_mse_4bit` cosine sim ≥ 0.99 | ✅ 0.994 |
 | `turbo_mse` > `lloyd_max` mesmos bits | ✅ rotação faz diferença |
-| `turbo_prod` corrige viés (cosine > 1.0) | ✅ QJL funciona |
+| Cosine sim ≤ 1.0 para todas as variantes | ✅ |
 
 ```bash
 # Verificação rápida: todos os 12 arquivos presentes
@@ -723,7 +723,7 @@ aos `relevant_ids` de `queries.jsonl` — sem necessidade de re-embedar texto.
 ```
 Fase 4 — Benchmark de Distorção
 
-  Embeddings: (556, 384)  dtype=float32
+  Embeddings: (591, 384)  dtype=float32
   Query vectors: 100 vetores extraídos do corpus
 
 Calculando métricas… ━━━━━━━━━━━━━━ 100% 0:00:00
@@ -744,15 +744,15 @@ baseline_f16        16   ~0.0         ~0.0           ~0.0         0.000034
 uniform              8   0.000001     0.000199      -0.000010     0.000800
 uniform              4   0.000300     0.052971       0.000432     0.014124
 uniform              2   0.007434     0.562021      -0.021953     0.061482
-lloyd_max            8   0.000145     0.024173      -0.128807     0.128807  ← viés alto!
-lloyd_max            4   0.000326     0.058797      -0.205900     0.205900
-lloyd_max            2   0.000804     0.167869      -0.310905     0.310905
-turbo_mse            8   0.000001     0.000097      -0.000687     0.001304
-turbo_mse            4   0.000029     0.005557      -0.011306     0.011792
-turbo_mse            2   0.000321     0.063473      -0.081009     0.081009
-turbo_prod           8   0.000002     0.000341       0.000065     0.000947
-turbo_prod           4   0.000156     0.028412       0.002704     0.009961  ← sweet spot
-turbo_prod           2   0.001518     0.202509       0.011796     0.028462
+lloyd_max            8   0.000131     0.021827      -0.125603     0.125603  ← viés alto!
+lloyd_max            4   0.000310     0.055728      -0.204682     0.204682
+lloyd_max            2   0.000785     0.163430      -0.310595     0.310595
+turbo_mse            8   0.000001     0.000101      -0.000638     0.001277
+turbo_mse            4   0.000029     0.005503      -0.010937     0.011385
+turbo_mse            2   0.000320     0.063302      -0.083336     0.083336
+turbo_prod           8   0.000002     0.000349       0.000095     0.000912
+turbo_prod           4   0.000155     0.028200       0.003227     0.009909  ← sweet spot
+turbo_prod           2   0.001511     0.200612       0.012642     0.028246
 ```
 
 **Insights dos resultados:**
@@ -820,11 +820,11 @@ Saída esperada:
 ```
 Build Indexes — Fase 5
 
-  ✓ faiss_f32.index                    556 vetores  834 KB
-  ✓ faiss_f16.index                    556 vetores  834 KB
-  ✓ faiss_uniform_8bit.index           556 vetores  834 KB
+  ✓ faiss_f32.index                    591 vetores  887 KB
+  ✓ faiss_f16.index                    591 vetores  887 KB
+  ✓ faiss_uniform_8bit.index           591 vetores  887 KB
   ...
-  ✓ faiss_turbo_prod_2bit.index        556 vetores  834 KB
+  ✓ faiss_turbo_prod_2bit.index        591 vetores  887 KB
 
 ✓ Índices prontos em indexes/
 ```
@@ -864,29 +864,29 @@ data/queries.jsonl (200 queries)
 
 ```
 Variante          bits   R@1    R@5    R@10   MRR    ms/q   MB(vetor)  Compress.
-baseline_f32        32   0.870  0.955  0.965  0.905  0.005   0.815      1.0×
-baseline_f16        16   0.870  0.955  0.965  0.905  0.005   0.408      2.0×
-uniform              8   0.875  0.950  0.965  0.907  0.005   0.205      3.98×
-uniform              4   0.805  0.935  0.960  0.862  0.005   0.104      7.84×
-uniform              2   0.225  0.440  0.530  0.317  0.005   0.053      15.4×
-lloyd_max            8   0.840  0.950  0.965  0.885  0.005   0.205      3.98×
-lloyd_max            4   0.835  0.955  0.970  0.883  0.005   0.104      7.84×
-lloyd_max            2   0.860  0.940  0.965  0.894  0.005   0.053      15.4×
-turbo_mse            8   0.875  0.955  0.965  0.908  0.005   0.205      3.98×
-turbo_mse            4   0.865  0.945  0.970  0.903  0.005   0.104      7.84×  ← sweet spot
-turbo_mse            2   0.825  0.945  0.955  0.873  0.005   0.053      15.4×
-turbo_prod           8   0.875  0.950  0.965  0.908  0.005   0.207      3.96×
-turbo_prod           4   0.850  0.935  0.970  0.889  0.005   0.105      7.76×
-turbo_prod           2   0.765  0.890  0.930  0.824  0.005   0.054      15.1×
+baseline_f32        32   0.795  0.895  0.935  0.844  0.008   0.866      1.0×
+baseline_f16        16   0.795  0.895  0.935  0.844  0.005   0.433      2.0×
+uniform              8   0.800  0.895  0.935  0.845  0.005   0.218      4.0×
+uniform              4   0.725  0.875  0.915  0.793  0.005   0.109      7.9×
+uniform              2   0.155  0.320  0.425  0.244  0.005   0.055      15.7×
+lloyd_max            8   0.770  0.905  0.935  0.831  0.005   0.218      4.0×
+lloyd_max            4   0.770  0.900  0.930  0.830  0.005   0.109      7.9×
+lloyd_max            2   0.765  0.895  0.920  0.827  0.006   0.055      15.7×
+turbo_mse            8   0.800  0.895  0.930  0.846  0.005   0.218      4.0×
+turbo_mse            4   0.795  0.890  0.925  0.841  0.005   0.109      7.9×  ← sweet spot
+turbo_mse            2   0.725  0.895  0.925  0.797  0.005   0.055      15.7×
+turbo_prod           8   0.805  0.895  0.935  0.850  0.005   0.219      4.0×
+turbo_prod           4   0.755  0.885  0.915  0.814  0.005   0.111      7.8×
+turbo_prod           2   0.640  0.845  0.875  0.725  0.005   0.056      15.3×
 ```
 
 **Insights dos resultados:**
 
-- `turbo_mse 4-bit`: **7.84×** compressão com R@10=0.970 (mesma do baseline f32=0.965!).
-- `uniform 2-bit`: colapso de qualidade (R@1=0.225) — 16× compressão destrói retrieval.
-- `turbo_mse 2-bit`: R@1=0.825 com 15.4× compressão — muito superior ao uniform.
+- `turbo_mse 4-bit`: **7.92×** compressão com R@10=0.925 (apenas −1.0 pp vs baseline f32=0.935).
+- `uniform 2-bit`: queda severa de qualidade (R@1=0.155) — 15.7× compressão destrói retrieval.
+- `turbo_mse 2-bit`: R@1=0.725 com 15.7× compressão — muito superior ao uniform.
 - A latência é idêntica (~0.005 ms/query) para todas as variantes porque o índice FAISS usa float32 independente da origem.
-- O sweet spot é `turbo_mse 4-bit`: 7.84× compressão com qualidade idêntica ao float32.
+- O sweet spot é `turbo_mse 4-bit`: 7.9× compressão com quase nenhuma perda de qualidade (−1.0 pp).
 
 ---
 
@@ -904,7 +904,7 @@ As queries são geradas com `make queries` (estratégia `first_sentence`):
 - `query` = primeira frase do chunk
 - `relevant_id` = o próprio chunk
 
-Com essa estratégia o f32 atinge **Recall@1 ≈ 87%** — não é 100% porque a primeira frase
+Com essa estratégia o f32 atinge **Recall@1 ≈ 80%** — não é 100% porque a primeira frase
 nor traz todo o contexto, mas é representativa o suficiente para medir degradação.
 
 ---
@@ -915,8 +915,8 @@ nor traz todo o contexto, mas é representativa o suficiente para medir degrada�
 |---|---|
 | 14 índices FAISS em `indexes/` | ✅ |
 | `benchmark_results.csv` com 14 linhas | ✅ |
-| `turbo_mse` Recall@10 ≥ `uniform` (mesmo bits) | ✅ (4-bit: 0.970 vs 0.960) |
-| `turbo_mse 4-bit` Recall@10 ≥ 90% do baseline | ✅ (0.970 / 0.965 = 100.5%!) |
+| `turbo_mse` Recall@10 ≥ `uniform` (mesmo bits) | ✅ (4-bit: 0.925 vs 0.915) |
+| `turbo_mse 4-bit` Recall@10 ≥ 90% do baseline | ✅ (0.925 / 0.935 = 98.9%) |
 | 2 gráficos em `charts/` | ✅ |
 
 ```bash
@@ -1104,12 +1104,12 @@ O demo exibe 3 seções:
 
 ```
                      Top-5 documentos recuperados por variante
- Rank  f32                          turbo_mse_4bit          uniform_2bit
-  1    0.795  redis-guide-p00-c32   0.787  redis-guide-..  0.790  redis-..  ← igual!
-  2    0.794  redis-guide-p00-c30   0.776  redis-guide-..  0.738  redis-..  ← igual!
-  3    0.785  redis-guide-p00-c31   0.765  redis-guide-..  0.718  redis-..  ← igual!
-  4    0.768  redis-guide-p00-c01   0.755  redis-guide-..  0.715  redis-..  ← igual!
-  5    0.765  redis-guide-p00-c33   0.747  redis-guide-..  0.713  PLAN.md  ← ERRADO!
+ Rank  f32                             turbo_mse_4bit             uniform_2bit
+  1    0.795  redis-guide-p00-c0032   0.787  redis-guide-..  0.821  redis-..  ← errado
+  2    0.794  redis-guide-p00-c0030   0.776  redis-guide-..  0.759  redis-..  ← certo
+  3    0.785  redis-guide-p00-c0031   0.765  redis-guide-..  0.736  redis-..  ← errado
+  4    0.768  redis-guide-p00-c0001   0.755  redis-guide-..  0.717  nestjs.. ← ERRADO
+  5    0.765  redis-guide-p00-c0033   0.747  redis-guide-..  0.716  redis-..  ← errado
 ```
 
 **2. Resposta gerada por cada variante** (mock extrativo por padrão)
@@ -1184,7 +1184,7 @@ make all
 ```bash
 # Fase 1 — Corpus
 make setup            # instala deps + cria .env + pastas
-make ingest           # data/raw/ → corpus.jsonl (556 chunks)
+make ingest           # data/raw/ → corpus.jsonl (591 chunks)
 make queries          # corpus.jsonl → queries.jsonl (first_sentence)
 make ingest-check     # quantos chunks por arquivo
 
