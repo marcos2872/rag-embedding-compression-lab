@@ -1,0 +1,9 @@
+model: BAAI/bge-small-en-v1.5    # dim=384
+# alternativas:
+#   BAAI/bge-base-en-v1.5          dim=768   (~430 MB)
+#   BAAI/bge-small-en-v1.5         dim=384   (~130 MB)  <- recomendado para CPU
+#   nomic-ai/nomic-embed-text-v1   dim=768   (~550 MB)
+batch_size: 64
+normalize: true
+device: cpu                       # cpu | cuda | mps
+cache_dir: null

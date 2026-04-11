@@ -1,0 +1,5 @@
+corpus_path: data/corpus.jsonl
+queries_path: data/queries.jsonl
+chunk_size: 64           # palavras por chunk (64 ≈ 5-6 frases, ideal para RAG de laboratório)
+chunk_overlap: 16
+min_chunk_length: 20     # descartar chunks muito curtos (em palavras)

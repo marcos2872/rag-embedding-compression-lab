@@ -1,0 +1,46 @@
+bits_list: [2, 4, 8]
+top_k_list: [1, 5, 10]
+random_seed: 42
+qjl_seed: 123
+num_queries: 100
+variants:
+  - name: baseline_f32
+    type: float32
+  - name: baseline_f16
+    type: float16
+  - name: uniform_2bit
+    type: uniform
+    bits: 2
+  - name: uniform_4bit
+    type: uniform
+    bits: 4
+  - name: uniform_8bit
+    type: uniform
+    bits: 8
+  - name: lloydmax_2bit
+    type: lloyd_max
+    bits: 2
+  - name: lloydmax_4bit
+    type: lloyd_max
+    bits: 4
+  - name: lloydmax_8bit
+    type: lloyd_max
+    bits: 8
+  - name: turbomse_2bit
+    type: turbo_mse
+    bits: 2
+  - name: turbomse_4bit
+    type: turbo_mse
+    bits: 4
+  - name: turbomse_8bit
+    type: turbo_mse
+    bits: 8
+  - name: turboprod_2bit
+    type: turbo_prod
+    bits: 2
+  - name: turboprod_4bit
+    type: turbo_prod
+    bits: 4
+  - name: turboprod_8bit
+    type: turbo_prod
+    bits: 8

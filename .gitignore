@@ -1,0 +1,63 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# ── Virtualenv / uv ───────────────────────────────────────────────────────────
+.venv/
+venv/
+
+# ── Obsidian (vault local — não pertence ao projeto) ─────────────────────────
+.obsidian/
+files/
+
+# ── Embeddings gerados (grandes, reproduzíveis via make embed) ────────────────
+embeddings/*.npy
+embeddings/*.npz
+# Mantém a pasta no repo via .gitkeep
+!embeddings/.gitkeep
+
+# ── Índices FAISS (grandes, reproduzíveis via make build-indexes) ─────────────
+indexes/*.index
+!indexes/.gitkeep
+
+# ── Dados processados (reproduzíveis via make ingest) ────────────────────────
+data/processed/
+data/corpus.jsonl
+data/queries.jsonl
+# data/raw/ é trackeado — contém os documentos de amostra do lab
+
+# ── Gráficos e dashboard (reproduzíveis via make visualize) ──────────────────
+charts/*.png
+charts/dashboard.html
+!charts/.gitkeep
+
+# ── Relatórios CSV (reproduzíveis via make all-bench) ────────────────────────
+reports/benchmark_results.csv
+reports/distortion_results.csv
+reports/per_query_ranks.csv
+# Mantém os relatórios Markdown (gerados mas com valor documental)
+!reports/retrieval_examples.md
+!reports/notes.md
+
+# ── Ambiente ──────────────────────────────────────────────────────────────────
+.env
+# .env.example é trackeado — template sem segredos
+
+# ── Editor / OS ───────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+
+# ── Jupyter ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── uv.lock (versiona as dependências exatas — recomendado manter) ────────────
+# uv.lock   ← descomente para NÃO versionar o lockfile
