@@ -212,8 +212,12 @@ def run_demo(
         return
 
     # Executa cada pipeline
+    # Pequena pausa entre chamadas para evitar rate-limit em APIs com tier gratuito
+    import time
     all_results: dict[str, dict] = {}
-    for v, pipe in pipelines.items():
+    for i, (v, pipe) in enumerate(pipelines.items()):
+        if i > 0:
+            time.sleep(1.5)   # 1.5s entre chamadas — suficiente para a maioria dos free-tiers
         console.print(f"  [cyan]Buscando:[/cyan] {v}…")
         all_results[v] = pipe.answer(query, k=k, llm_backend=llm_backend, llm_model=llm_model)
 
@@ -277,14 +281,27 @@ def _print_answers(all_results: dict) -> None:
     """Painel com as respostas geradas por cada variante."""
     for v, data in all_results.items():
         backend = data["backend"]
-        answer  = data["answer"]
-        # Trunca resposta longa
-        if len(answer) > 400:
-            answer = answer[:400] + "…"
+        answer = data["answer"]
+
+        # Separa erro de fallback (linha com ⚠) do corpo da resposta
+        error_line = ""
+        if "\n\n[⚠" in answer:
+            body, error_line = answer.rsplit("\n\n[⚠", 1)
+            error_line = "[⚠" + error_line
+        else:
+            body = answer
+
+        # Trunca só o corpo, nunca a mensagem de erro
+        if len(body) > 400:
+            body = body[:400] + "…"
+
+        display = body + (f"\n\n[yellow]{error_line}[/yellow]" if error_line else "")
+
+        border = "red" if error_line else "dim"
         console.print(Panel(
-            answer,
+            display,
             title=f"[bold cyan]{v}[/bold cyan]  [dim](LLM: {backend})[/dim]",
-            border_style="dim",
+            border_style=border,
             padding=(0, 1),
         ))
     console.print()

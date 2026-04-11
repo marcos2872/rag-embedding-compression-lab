@@ -17,13 +17,14 @@
 
 1. [O problema](#o-problema)
 2. [Os quatro métodos](#os-quatro-métodos)
-3. [Resultados de retrieval](#resultados-de-retrieval)
-4. [Por que a rotação muda tudo](#por-que-a-rotação-muda-tudo)
-5. [Erros de produto interno e o QJL](#erros-de-produto-interno-e-o-qjl)
-6. [Quais queries sofrem mais](#quais-queries-sofrem-mais)
-7. [Impacto end-to-end no pipeline RAG](#impacto-end-to-end-no-pipeline-rag)
-8. [Como rodar](#como-rodar)
-9. [Referências](#referências)
+3. [O algoritmo TurboQuant em detalhe](#o-algoritmo-turboquant-em-detalhe)
+4. [Resultados de retrieval](#resultados-de-retrieval)
+5. [Por que a rotação muda tudo](#por-que-a-rotação-muda-tudo)
+6. [Erros de produto interno e o QJL](#erros-de-produto-interno-e-o-qjl)
+7. [Quais queries sofrem mais](#quais-queries-sofrem-mais)
+8. [Impacto end-to-end no pipeline RAG](#impacto-end-to-end-no-pipeline-rag)
+9. [Como rodar](#como-rodar)
+10. [Referências](#referências)
 
 ---
 
@@ -79,6 +80,198 @@ cada uma adicionando um componente sobre a anterior:
 **`turbo_mse`** _(TurboQuantMSE, baseado no paper TurboQuant)_ — aplica uma **rotação ortogonal aleatória** ao vetor antes de quantizar. A rotação redistribui a energia uniformemente entre todas as dimensões, fazendo com que cada coordenada siga exatamente a distribuição teórica para a qual o codebook Lloyd-Max foi projetado. O resultado: 33× menos MSE que o lloyd_max puro no mesmo nível de bits.
 
 **`turbo_prod`** _(TurboQuantProd)_ — estende o MSE adicionando um segundo passo: quantiza o **resíduo** (vetor original − reconstrução MSE) com 1 bit por dimensão usando o estimador JL quantizado (QJL). Isso remove o viés sistemático que o TurboQuantMSE introduz nos produtos internos.
+
+---
+
+## O algoritmo TurboQuant em detalhe
+
+> _Baseado no paper [TurboQuant: Near-Lossless Embedding Compression for Vector Search](data/raw/2504.19874v1.pdf) (2025)._
+
+TurboQuant é um método de quantização escalar para embeddings normalizados que combina **três componentes ortogonais** para atingir compressão quase sem perda em sistemas de busca por produto interno máximo (MIPS). A ideia central é construir um pipeline em que cada componente resolve exatamente a fraqueza do anterior.
+
+### Por que os métodos anteriores falham
+
+| Método | Problema |
+|---|---|
+| Quantização uniforme | Desperdíça bins nas caudas; coordenadas de vetores normalizados se concentram perto de zero |
+| Lloyd-Max sem rotação | Codebook ótimo para a distribuição teórica, mas os embeddings reais têm energia **não uniforme** entre dimensões |
+| Product Quantization (PQ/FAISS) | Codebook **dependente de dados**, requer treinamento; não escala bem a corpora dinâmicos |
+| Quantização binária (1-bit) | Compressão máxima, mas introduz degradação severa de recall |
+
+TurboQuant resolve todos esses pontos mantendo o codebook **independente de dados** (calculado uma vez a partir da geometria da esfera) e corrigindo a não-uniformidade de energia via rotação.
+
+---
+
+### Componente 1 — A distribuição na esfera unitária S^(d−1)
+
+O ponto de partida do paper é uma observação puramente geométrica: se um vetor **x** é distribuído uniformemente na esfera unitária S^(d−1), cada coordenada individual x_i segue uma distribuição com densidade:
+
+```
+p(t) ∝ (1 − t²)^((d−3)/2),   t ∈ [−1, 1]
+```
+
+Esta é uma distribuição **Beta reescalada** — Beta((d−1)/2, (d−1)/2) — extremamente concentrada em torno de zero para dimensões altas:
+
+- Para `d=384`: desvio padrão ≈ 1/√384 ≈ **0.051**
+- Para `d=768`: desvio padrão ≈ 1/√768 ≈ **0.036**
+
+A distribuição é **determinada unicamente por `d`**, independente de qual corpus ou modelo gerou os vetores. Isso permite computar o codebook ótimo uma única vez e reutilizá-lo para qualquer corpus com a mesma dimensão.
+
+---
+
+### Componente 2 — Rotação ortogonal aleatória
+
+Embeddings reais de modelos neurais têm **energia não uniforme**: algumas dimensões carregam muito mais informação que outras. Aplicar o codebook ótimo (calculado para variância uniforme) em vetores desbalanceados desperdiça resolução nas dimensões erradas.
+
+A solução é aplicar uma **rotação ortogonal aleatória R** antes de quantizar:
+
+```
+y = R @ x
+```
+
+- **R** é gerada via decomposição QR de uma matriz Gaussiana aleatória → distribuda uniformemente sobre o grupo de matrizes ortogonais (medida de Haar)
+- Após a rotação, por simetria, cada coordenada de `y` tem **variância esperada idêntica** = 1/d
+- Se `x` está na esfera unitária, cada coordenada de `y` segue exatamente a distribuição Beta descrita acima
+- A mesma rotação é aplicada a **todos** os vetores do corpus e às queries em tempo de busca
+- A reconstrução é trivial: `x̂ = R.T @ ŷ` (pois R é ortogonal, sua inversa é sua transposta)
+
+> 💡 Alternativa eficiente: substituir a matriz densa QR por uma **matriz de Hadamard × diagonal de sinais aleatórios**, reduzindo a aplicação de O(d²) para O(d log d).
+
+---
+
+### Componente 3 — Codebook Lloyd-Max para a esfera
+
+Com a rotação garantindo que todas as coordenadas seguem a distribuição teórica, o próximo passo é encontrar o codebook de b bits que **minimiza o MSE esperado** para essa distribuição.
+
+O algoritmo **Lloyd-Max** faz exatamente isso, alternando dois passos até convergência:
+
+```
+① Partition step:  fronteiras de decisão = ponto médio entre níveis adjacentes
+② Reconstruction step: cada nível = média condicional da distribuição no intervalo
+```
+
+Resultado prático para `d=384`, `b=4`:
+- Codebook com **16 entradas** concentradas perto de zero
+- Menos de 100 bytes de armazenamento, compartilhado por todos os N vetores do corpus
+- Calculado uma vez por configuração (d, b) e cacheado
+
+**Impacto do codebook vs. uniforme a 2-bit (4 entradas):**
+- Codebook uniforme: 4 bins cobrindo [-1, +1] → 3 bins desperdiçados nas caudas
+- Codebook Lloyd-Max: 3 dos 4 bins concentrados em [-0.1, +0.1] → resolução onde os dados estão
+
+---
+
+### TurboQuantMSE — algoritmo completo
+
+Os três componentes se combinam no seguinte pipeline por vetor:
+
+```
+Entrada: x ∈ ℝ^d  (embedding original)
+
+1. NORMALIZAÇÃO
+   norm = ||x||₂                   → armazenado como float16
+   x̂   = x / norm                  → vetor unitário
+
+2. ROTAÇÃO
+   y = R @ x̂                       → coordenadas redistribuídas uniformemente
+
+3. QUANTIZAÇÃO ESCALAR
+   Para cada yᵢ:
+     k(i) = argmin_k |yᵢ − c_k|    → índice do bin mais próximo no codebook
+   Armazena k(i) com b bits
+
+4. BIT PACKING
+   Empacota todos os índices com numpy.packbits
+   → d×b / 8 bytes  (ex: 384×4/8 = 192 bytes para b=4)
+
+Saída armazenada: {packed_indices, norm}  +  R e codebook (estado compartilhado)
+
+─────────────────────────────────────────────
+RECONSTRUÇÃO (em tempo de busca):
+   Desempacota índices → y_hat (lookup no codebook)
+   x_hat = norm × R.T @ y_hat
+```
+
+**Taxas de compressão resultantes para d=384:**
+
+| Bits | Bytes/vetor | Compressão vs float32 |
+|---:|---:|---:|
+| 8 | 384 B | **4×** |
+| 4 | 192 B | **8×** |
+| 2 | 96 B | **16×** |
+
+---
+
+### TurboQuantProd — correção de viés via QJL
+
+O TurboQuantMSE minimiza o MSE mas introduz um **viés sistemático no produto interno**: `E[⟨q, x̂⟩] ≠ ⟨q, x⟩`. Esse viés ocorre porque os erros de quantização se correlacionam com o codebook de forma assimétrica.
+
+O **TurboQuantProd** corrige isso adicionando uma segunda etapa que quantiza o **resíduo**:
+
+```
+Resíduo:  r = y − ŷ       (diferença entre vetor rotacionado e sua reconstrução MSE)
+```
+
+O resíduo é quantizado com o estimador **QJL (Johnson-Lindenstrauss Quantizado)**:
+
+```
+1. Projeta r com uma matriz Gaussiana aleatória S ∈ ℝ^(d×d):
+     s = sign(S @ r)           → vetor de bits (±1)
+
+2. Armazena s como bit-array (d/8 bytes) + γ = ||r|| como float16
+
+3. Em tempo de busca, o IP com o resíduo é estimado como:
+     IP_residual ≈ (π/2) / d × γ × (R @ q)ᵀ S.T s
+```
+
+O QJL fornece um **estimador não viciado** do produto interno com o resíduo. O truque é que os bits do QJL substituem 1 bit do TurboQuantMSE — o orçamento total permanece `b bits/dimensão`:
+
+```
+TurboQuantProd b-bit = TurboQuantMSE (b−1)-bit  +  QJL 1-bit
+```
+
+**Overhead de armazenamento para d=384, b=4:**
+- Parte MSE (3-bit): 144 bytes
+- Parte QJL (1-bit): 48 bytes  
+- γ: 2 bytes (float16)
+- **Total: ~194 bytes** (vs 192 bytes do TurboQuantMSE 4-bit)
+
+---
+
+### Garantias teóricas
+
+O paper prova os seguintes limites superiores para o erro quadrático esperado do produto interno:
+
+```
+TurboQuantMSE:   E[(⟨q, x̂⟩ − ⟨q, x⟩)²]  ≤  O(1 / (d · 4^b))
+TurboQuantProd:  idem, com constante menor (viés reduzido)
+```
+
+Pontos-chave das garantias:
+- **Cada bit adicional** reduz o erro em ~4× (melhora quadrática)
+- **Dimensão no denominador**: com mais dimensões, os erros individuais se cancelam (efeito TLC)
+- O limite é **ótimo** para quantização escalar em vetores normalizados (coincide com o limite de informação)
+- Vale sob a hipótese de embeddings aproximadamente uniformes na esfera — satisfeita após a rotação
+
+---
+
+### Resumo visual do pipeline
+
+```
+                    ┌─────────────────────────────────────────────┐
+                    │            TURBOQUANT PIPELINE               │
+                    └─────────────────────────────────────────────┘
+
+  x (float32)  ──▶  normalizar  ──▶  R @ x̂  ──▶  Lloyd-Max  ──▶  packbits  ──▶  💾
+                                      │                │
+                                  rotação          codebook
+                                 (1 seed)        (d, b → 2^b
+                                 compartilhada    centróides)
+
+  TurboQuantProd adiciona:
+  y − ŷ  ──▶  sign(S @ r)  ──▶  packbits  ──▶  💾  (+48 B)
+               QJL 1-bit
+```
 
 ---
 

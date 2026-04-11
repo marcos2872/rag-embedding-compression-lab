@@ -104,24 +104,48 @@ def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
 
 
 def _call_openai(prompt: str, model: Optional[str] = None) -> str:
-    """Envia prompt a qualquer API compatível com OpenAI."""
+    """Envia prompt a qualquer API compatível com OpenAI (inclui OpenRouter)."""
     try:
         from openai import OpenAI
     except ImportError:
-        return "[openai não instalado — use: uv add openai]"
+        raise RuntimeError("openai não instalado — execute: uv add openai")
 
-    client = OpenAI(
-        base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-    )
-    model = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
+    api_key  = os.getenv("OPENAI_API_KEY", "")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    model    = model or os.getenv("LLM_MODEL", "gpt-4o-mini")
+
+    if not api_key or api_key.startswith("sk-or-v1-troque"):
+        raise ValueError(
+            "OPENAI_API_KEY não configurada.\n"
+            "Edite o .env e coloque sua chave real do OpenRouter."
+        )
+
+    # OpenRouter recomenda enviar estes headers opcionais
+    extra_headers = {}
+    if "openrouter" in base_url:
+        extra_headers = {
+            "HTTP-Referer": "https://github.com/rag-embedding-compression-lab",
+            "X-Title": "RAG Embedding Compression Lab",
+        }
+
+    client = OpenAI(base_url=base_url, api_key=api_key)
     resp = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
-        max_tokens=256,
+        max_tokens=512,
+        extra_headers=extra_headers,
     )
-    return resp.choices[0].message.content.strip()
+
+    # content pode ser None em respostas de erro ou content-filter
+    content = resp.choices[0].message.content if resp.choices else None
+    if not content:
+        # Tenta extrair mensagem de erro do campo nativo do OpenRouter
+        err = getattr(resp, "error", None)
+        detail = str(err) if err else f"choices={resp.choices}"
+        raise ValueError(f"OpenRouter retornou resposta vazia. Detalhe: {detail}")
+
+    return content.strip()
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
