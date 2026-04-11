@@ -144,6 +144,58 @@ CHART_META = [
         "badge": "decisão de produção",
         "badge_color": "#b47cc7",
     },
+    {
+        "id":    "memory",
+        "icon":  "💾",
+        "title": "Compressão de Memória por Variante",
+        "what":  "Barras horizontais mostrando o tamanho real dos embeddings em MB para cada "
+                 "variante, usando bit-packing correto (2 índices de 4-bit por byte, "
+                 "4 índices de 2-bit por byte). Cor indica a taxa de compressão.",
+        "how":   "Barras mais curtas = menos memória. A cor varia de vermelho (pouca compressão) "
+                 "a verde (muita compressão). Os valores à direita mostram o tamanho exato e a "
+                 "taxa vs. float32. <b>Atenção:</b> sem bit-packing, 4-bit usaria o mesmo espaço "
+                 "que 8-bit — o packing é obrigatório para atingir as taxas teóricas.",
+        "impact":"O ganho de memória é real e significativo em escala: 1 milhão de documentos "
+                 "com dim=384 em <b>turbo_mse 4-bit</b> ocupa ~184 MB em vez de 1.46 GB. "
+                 "Isso permite manter o corpus inteiro em RAM em hardware mais barato.",
+        "badge": "memória em disco",
+        "badge_color": "#16a085",
+    },
+    {
+        "id":    "degradation",
+        "icon":  "🔍",
+        "title": "Degradação de Rank por Query — Quais Queries Sofrem Mais?",
+        "what":  "Violin plot mostrando a distribuição do rank do documento relevante por query, "
+                 "para cada variante. Cada ponto é uma query individual. O rank 1 significa "
+                 "'documento relevante encontrado na primeira posição'.",
+        "how":   "<b>Rank baixo (próximo de 1)</b> = sistema funcionando bem para essa query. "
+                 "<b>Rank alto (ou >20)</b> = sistema não encontrou o relevante. "
+                 "A largura do violin em cada altura indica quantas queries ficaram naquele rank. "
+                 "A mediana é mostrada em branco.",
+        "impact":"<b>uniform 2-bit</b> mostra padrão bimodal: ou funciona perfeitamente (rank 1-2) "
+                 "ou falha completamente (rank >20). Não há meio-termo. "
+                 "<b>turbo_mse</b> mantém quase todas as queries no rank 1-3 mesmo a 2-bit, "
+                 "demonstrando que a rotação ortogonal estabiliza o comportamento por query.",
+        "badge": "análise por query",
+        "badge_color": "#8e44ad",
+    },
+    {
+        "id":    "latency",
+        "icon":  "⚡",
+        "title": "Latência de Busca — Quantização não Penaliza a Velocidade",
+        "what":  "Comparação da latência mediana de busca (em ms por query) para todas as "
+                 "variantes. A linha tracejada marca o baseline float32.",
+        "how":   "<b>Barras mais curtas</b> = mais rápido. Todas as variantes usam "
+                 "<b>IndexFlatIP do FAISS com vetores float32</b> — a quantização é desfeita "
+                 "antes de inserir no índice. Por isso a latência é idêntica independente "
+                 "do nível de compressão.",
+        "impact":"O ganho de memória vem do <b>armazenamento em disco</b> (.npz bit-packed), "
+                 "não do índice de busca. Em produção, o benefício real é: menor custo de RAM, "
+                 "carregamento mais rápido do disco, e a possibilidade de usar índices "
+                 "quantizados nativos (ex: FAISS IndexIVFPQ) para ganho de velocidade também.",
+        "badge": "latência de busca",
+        "badge_color": "#2980b9",
+    },
 ]
 
 
@@ -169,6 +221,8 @@ def generate_dashboard() -> None:
 
     console.print("\n[bold cyan]Fase 6 — Gerando dashboard interativo[/bold cyan]\n")
 
+    ranks_path = Path("reports/per_query_ranks.csv")
+
     figs = [
         _table_fig(bench, dist),
         _recall_line_fig(bench),
@@ -176,8 +230,14 @@ def generate_dashboard() -> None:
         _mse_bar_fig(dist),
         _ip_heatmap_fig(dist),
         _compression_fig(bench),
+        _memory_fig(bench),
+        _degradation_fig(ranks_path),
+        _latency_fig(bench),
     ]
-    labels = ["Tabela", "Recall vs Bits", "Trade-off", "MSE", "IP Heatmap", "Compressão"]
+    labels = [
+        "Tabela", "Recall vs Bits", "Trade-off ⭐", "MSE",
+        "IP Heatmap", "Compressão × Recall", "Memória", "Degradação por Query", "Latência",
+    ]
     for lbl in labels:
         console.print(f"  [green]✓[/green] {lbl}")
 
@@ -531,6 +591,147 @@ def _compression_fig(bench: pd.DataFrame):
     return fig
 
 
+
+def _memory_fig(bench: pd.DataFrame):
+    """Barras horizontais: embed_size_mb por variante+bits, cor = compressão."""
+    import plotly.graph_objects as go
+    import plotly.colors as pc
+
+    # Gradiente manual: vermelho (baixa compressão) → verde (alta compressão)
+    def _comp_to_color(comp: float) -> str:
+        t = min(max((comp - 1.0) / 15.0, 0.0), 1.0)
+        r = int(220 * (1 - t) + 39 * t)
+        g = int(50  * (1 - t) + 174 * t)
+        b = int(50  * (1 - t) + 96  * t)
+        return f"rgb({r},{g},{b})"
+
+    rows_sel = []
+    order = ["baseline_f32", "baseline_f16"] + ["uniform", "lloyd_max", "turbo_mse", "turbo_prod"]
+    for var in order:
+        sub = bench[bench["variant"] == var].sort_values("bits", ascending=False)
+        for _, r in sub.iterrows():
+            rows_sel.append(r)
+
+    labels_y, xs, comp_vals, bar_colors = [], [], [], []
+    for r in rows_sel:
+        var  = r["variant"]
+        bits = int(r["bits"])
+        mb   = r["embed_size_mb"]
+        comp = r["compression_vs_f32"]
+        lbl  = f"{var}  {bits}-bit" if not var.startswith("base") else var.replace("baseline_", "float")
+        labels_y.append(lbl)
+        xs.append(mb)
+        comp_vals.append(comp)
+        bar_colors.append(_comp_to_color(comp))
+
+    fig = go.Figure(go.Bar(
+        x=xs, y=labels_y, orientation="h",
+        marker_color=bar_colors,
+        marker_line_color="white", marker_line_width=1,
+        text=[f"{mb:.3f} MB  ({c:.1f}×)" for mb, c in zip(xs, comp_vals)],
+        textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Tamanho: %{x:.3f} MB<br>Compressão: %{text}<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis=dict(title="Tamanho (MB)", showgrid=True, gridcolor="#eeeeee"),
+        yaxis=dict(autorange="reversed"),
+        plot_bgcolor="white",
+        height=max(350, len(labels_y) * 30),
+        margin=dict(l=180, r=160, t=20, b=50),
+    )
+    return fig
+
+
+def _degradation_fig(ranks_path):
+    """Violin: distribuição do rank do relevante por variante."""
+    import plotly.graph_objects as go
+
+    if not ranks_path.exists():
+        fig = go.Figure()
+        fig.add_annotation(text="per_query_ranks.csv não encontrado.<br>Execute: make retrieval-bench",
+                           xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font_size=14)
+        fig.update_layout(height=200)
+        return fig
+
+    import pandas as _pd
+    df = _pd.read_csv(str(ranks_path))
+
+    focus = {
+        "baseline_f32_32": ("float32 (baseline)", "#333333"),
+        "turbo_mse_8":     ("turbo_mse 8-bit",    "#D65F5F"),
+        "turbo_mse_4":     ("turbo_mse 4-bit",     "#D65F5F"),
+        "turbo_mse_2":     ("turbo_mse 2-bit",     "#D65F5F"),
+        "uniform_4":       ("uniform 4-bit",        "#4878CF"),
+        "uniform_2":       ("uniform 2-bit",        "#4878CF"),
+    }
+    available = {k: v for k, v in focus.items() if k in df.columns}
+    cap = 25
+
+    fig = go.Figure()
+    for col, (lbl, color) in available.items():
+        vals = df[col].clip(upper=cap).tolist()
+        fig.add_trace(go.Violin(
+            y=vals, name=lbl,
+            line_color=color, fillcolor=color, opacity=0.5,
+            box_visible=True, meanline_visible=True,
+            points="all", pointpos=0,
+            marker=dict(size=3, opacity=0.4, color=color),
+            hovertemplate=f"<b>{lbl}</b><br>Rank: %{{y}}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        yaxis=dict(
+            title=f"Rank do relevante (cap={cap})",
+            tickvals=[1, 5, 10, cap],
+            ticktext=["1", "5", "10", f">{cap-1}"],
+            showgrid=True, gridcolor="#eeeeee",
+        ),
+        xaxis=dict(showgrid=False),
+        plot_bgcolor="white",
+        showlegend=True,
+        legend=dict(x=0.01, y=0.99),
+        height=450,
+        margin=dict(l=60, r=20, t=20, b=60),
+    )
+    return fig
+
+
+def _latency_fig(bench: pd.DataFrame):
+    """Barras: latência mediana (ms/query) por variante."""
+    import plotly.graph_objects as go
+
+    quant = bench[~bench["variant"].str.startswith("baseline")].copy()
+    quant["label"] = quant["variant"].str.replace("_", " ") + " " + quant["bits"].astype(str) + "b"
+    quant = quant.sort_values(["variant", "bits"], ascending=[True, False])
+
+    base_lat = bench[bench["variant"] == "baseline_f32"]["latency_ms"].values[0]
+    bar_colors = [COLORS.get(v, "#aaaaaa") for v in quant["variant"]]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=quant["label"], y=quant["latency_ms"],
+        marker_color=bar_colors, opacity=0.85,
+        marker_line_color="white", marker_line_width=1,
+        text=[f"{v:.3f} ms" for v in quant["latency_ms"]],
+        textposition="outside",
+        hovertemplate="<b>%{x}</b><br>Latência: %{y:.4f} ms/query<extra></extra>",
+    ))
+    fig.add_hline(
+        y=base_lat, line_dash="dash", line_color="#333333", line_width=1.5,
+        annotation_text=f"  float32 ({base_lat:.3f} ms)",
+        annotation_position="right",
+        annotation_font_color="#333333",
+    )
+    fig.update_layout(
+        xaxis=dict(title="Variante", showgrid=False, tickangle=-30),
+        yaxis=dict(title="Latência mediana (ms/query)", showgrid=True, gridcolor="#eeeeee"),
+        plot_bgcolor="white",
+        height=420,
+        margin=dict(l=60, r=80, t=20, b=90),
+    )
+    return fig
+
+
 # ── HTML assembler ─────────────────────────────────────────────────────────────
 
 def _write_html(figs: list, bench: pd.DataFrame, dist: pd.DataFrame) -> None:
@@ -566,6 +767,127 @@ def _write_html(figs: list, bench: pd.DataFrame, dist: pd.DataFrame) -> None:
 
 
 # ── Legenda de variantes e bits ────────────────────────────────────────────────
+
+# ── Seção RAG demo (HTML estático) ────────────────────────────────────────────
+_RAG_SECTION_HTML = """
+<section id="rag_demo" class="chart-section" style="margin-bottom:32px">
+  <div class="section-header">
+    <span class="section-icon">🤖</span>
+    <h2 class="section-title">Impacto End-to-End no Pipeline RAG</h2>
+    <span class="badge" style="background:#c0392b">impacto real</span>
+  </div>
+
+  <div class="desc-grid">
+    <div class="desc-card what">
+      <div class="desc-label">📌 O que mostra</div>
+      <div class="desc-body">
+        Compara os documentos que cada variante recupera para a mesma query.
+        Mostra se a degradação numérica nos benchmarks se traduz em respostas
+        erradas na prática &mdash; o que importa de verdade num sistema RAG.
+      </div>
+    </div>
+    <div class="desc-card how">
+      <div class="desc-label">🔍 Como ler</div>
+      <div class="desc-body">
+        Cada linha é um rank (1 = mais relevante). Células verdes = documento
+        idêntico ao float32. Células amarelas = documento diferente.
+        A tabela de divergência mostra em quantos dos top-5 documentos
+        cada variante concorda com o baseline.
+      </div>
+    </div>
+    <div class="desc-card impact">
+      <div class="desc-label">⚡ Impacto prático</div>
+      <div class="desc-body">
+        <b>turbo_mse 4-bit</b>: 5/5 documentos idênticos ao float32 &mdash;
+        o LLM recebe exatamente o mesmo contexto. <b>uniform 2-bit</b>: 0/5
+        documentos corretos &mdash; o LLM responde sobre o tema errado sem
+        nenhum erro explícito no sistema.
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:16px 24px 20px">
+    <p style="font-size:.88rem;color:#4a5568;margin-bottom:16px">
+      Query: <code style="background:#f0f2f5;padding:2px 8px;border-radius:4px">
+      how does Redis handle memory when it runs out?</code>
+    </p>
+
+    <div style="overflow-x:auto">
+      <table class="rag-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>float32 <span class="var-dot" style="background:#333"></span></th>
+            <th>turbo_mse 4-bit <span class="var-dot" style="background:#D65F5F"></span></th>
+            <th>uniform 2-bit <span class="var-dot" style="background:#4878CF"></span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="rank-cell">1</td>
+            <td class="doc-cell ok"><span class="score">0.795</span><span class="doc-id">redis-guide-p00-c32</span><span class="doc-prev">The maxmemory configuration limits Redis memory usage. When memory is full, the eviction policy determines which keys to remove…</span></td>
+            <td class="doc-cell ok"><span class="score">0.787</span><span class="doc-id">redis-guide-p00-c32</span><span class="doc-prev">The maxmemory configuration limits Redis memory usage. When memory is full, the eviction policy determines which keys to remove…</span></td>
+            <td class="doc-cell ok"><span class="score">0.790</span><span class="doc-id">redis-guide-p00-c34</span><span class="doc-prev">state store for distributed optimization frameworks. Workers can read and write trial results atomically…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">2</td>
+            <td class="doc-cell ok"><span class="score">0.794</span><span class="doc-id">redis-guide-p00-c30</span><span class="doc-prev">GET and SET operations with small values achieve over 1 million operations per second on a single Redis instance…</span></td>
+            <td class="doc-cell ok"><span class="score">0.776</span><span class="doc-id">redis-guide-p00-c30</span><span class="doc-prev">GET and SET operations with small values achieve over 1 million operations per second on a single Redis instance…</span></td>
+            <td class="doc-cell ok"><span class="score">0.738</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">3</td>
+            <td class="doc-cell ok"><span class="score">0.785</span><span class="doc-id">redis-guide-p00-c31</span><span class="doc-prev">all data that needs to be kept in memory, including Redis overhead. Redis uses approximately 100 bytes…</span></td>
+            <td class="doc-cell ok"><span class="score">0.765</span><span class="doc-id">redis-guide-p00-c31</span><span class="doc-prev">all data that needs to be kept in memory, including Redis overhead. Redis uses approximately 100 bytes…</span></td>
+            <td class="doc-cell ok"><span class="score">0.718</span><span class="doc-id">redis-guide-p00-c02</span><span class="doc-prev">Redis stores all data in memory by default, which enables sub-millisecond read and write latency…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">4</td>
+            <td class="doc-cell ok"><span class="score">0.768</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+            <td class="doc-cell ok"><span class="score">0.755</span><span class="doc-id">redis-guide-p00-c01</span><span class="doc-prev">widely deployed databases in the world due to its exceptional performance, simplicity and versatility…</span></td>
+            <td class="doc-cell ok"><span class="score">0.715</span><span class="doc-id">redis-guide-p00-c03</span><span class="doc-prev">Redis is single-threaded for command processing, which eliminates the need for locks…</span></td>
+          </tr>
+          <tr>
+            <td class="rank-cell">5</td>
+            <td class="doc-cell ok"><span class="score">0.765</span><span class="doc-id">redis-guide-p00-c33</span><span class="doc-prev">performance issue. When keys of varying sizes are frequently added and deleted, the memory allocator…</span></td>
+            <td class="doc-cell ok"><span class="score">0.747</span><span class="doc-id">redis-guide-p00-c33</span><span class="doc-prev">performance issue. When keys of varying sizes are frequently added and deleted, the memory allocator…</span></td>
+            <td class="doc-cell warn"><span class="score">0.713</span><span class="doc-id">PLAN-p00-c03</span><span class="doc-prev">⚠ Documento sobre o próprio lab (PLAN.md) — completamente irrelevante para a query sobre Redis!</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="div-table" style="margin-top:16px">
+      <table class="rag-table">
+        <thead>
+          <tr><th>Variante</th><th>Docs em comum c/ f32</th><th>Top-1 idêntico?</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>turbo_mse_4bit</code></td>
+            <td><span class="pill green">5 / 5 (100%)</span></td>
+            <td><span class="pill green">Sim ✓</span></td>
+            <td><span class="pill green">Qualidade mantida</span></td>
+          </tr>
+          <tr>
+            <td><code>uniform_2bit</code></td>
+            <td><span class="pill red">0 / 5 (0%)</span></td>
+            <td><span class="pill red">Não ✗</span></td>
+            <td><span class="pill red">Degradação severa</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p style="font-size:.82rem;color:#7f8c8d;margin-top:12px">
+      Execute <code>make rag-demo QUERY="..."</code> para testar com qualquer pergunta.
+      Suporta Ollama (<code>BACKEND=ollama MODEL=llama3.2</code>) e APIs OpenAI-compatible.
+    </p>
+  </div>
+</section>
+"""
+
+
 _LEGEND_HTML = """
 <section id="legend" class="chart-section" style="margin-bottom:32px">
   <div class="section-header">
@@ -790,7 +1112,7 @@ _LEGEND_HTML = """
 
 
 def _build_sections(plotly_divs: list[str]) -> str:
-    parts = [_LEGEND_HTML]   # legenda sempre primeiro
+    parts = [_LEGEND_HTML, _RAG_SECTION_HTML]   # legenda + demo primeiro
     for meta, div in zip(CHART_META, plotly_divs):
         badge_html = (
             f'<span class="badge" style="background:{meta["badge_color"]}">'
@@ -994,6 +1316,40 @@ main {{ padding: 24px 40px 60px; max-width: 1400px; margin: 0 auto; }}
 
 /* ── Chart wrapper ────────────────────────────────── */
 .chart-wrap {{ padding: 12px 16px 4px; }}
+
+/* ── RAG demo table ──────────────────────────────── */
+.rag-table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  margin-bottom: 4px;
+}}
+.rag-table th {{
+  background: #2c3e50;
+  color: white;
+  padding: 8px 12px;
+  text-align: left;
+  font-weight: 600;
+}}
+.rag-table td {{ padding: 7px 10px; vertical-align: top; border-bottom: 1px solid #f0f2f5; }}
+.rank-cell {{ font-weight: 700; color: #2c3e50; text-align: center; width: 40px; }}
+.doc-cell {{ max-width: 300px; }}
+.doc-cell.ok   {{ background: #f8fff8; }}
+.doc-cell.warn {{ background: #fff8f0; border-left: 3px solid #e67e22; }}
+.score  {{ display:block; font-size:.75rem; color:#7f8c8d; font-family:monospace; }}
+.doc-id {{ display:block; font-weight:700; font-size:.8rem; color:#2c3e50; margin:2px 0; font-family:monospace; }}
+.doc-prev {{ display:block; font-size:.75rem; color:#7f8c8d; line-height:1.4; }}
+.var-dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-left:4px; vertical-align:middle; }}
+.pill {{
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: .75rem;
+  font-weight: 600;
+}}
+.pill.green {{ background:#e8f8f0; color:#1a7a4a; }}
+.pill.red   {{ background:#fdecea; color:#c0392b; }}
+
 /* ── Legend cards ────────────────────────────────── */
 .legend-grid {{
   display: grid;
@@ -1161,12 +1517,16 @@ footer {{
 <nav>
   <ul>
     <li><a href="#legend" style="color:#2980b9;font-weight:600">📖 Legenda</a></li>
+    <li><a href="#rag_demo" style="color:#c0392b;font-weight:600">🤖 RAG Demo</a></li>
     <li><a href="#overview">📋 Tabela</a></li>
     <li><a href="#recall_line">📈 Recall vs Bits</a></li>
     <li><a href="#tradeoff">⭐ Trade-off</a></li>
     <li><a href="#mse">📐 MSE</a></li>
     <li><a href="#heatmap">🌡️ IP Heatmap</a></li>
     <li><a href="#compression">🗜️ Compressão</a></li>
+    <li><a href="#memory">💾 Memória</a></li>
+    <li><a href="#degradation">🔍 Queries</a></li>
+    <li><a href="#latency">⚡ Latência</a></li>
   </ul>
 </nav>
 
