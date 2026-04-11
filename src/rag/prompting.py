@@ -5,12 +5,13 @@ Template de prompt e chamada ao LLM.
 
 Backends suportados (em ordem de preferência):
   1. Mock   — resposta extrativa do top-1 chunk (sem dependência externa)
-  2. Ollama — http://localhost:11434  (se disponível)
+  2. Ollama — URL configurável via OLLAMA_BASE_URL (padrão: http://localhost:11434)
   3. OpenAI-compatible — qualquer base_url + api_key nas variáveis de ambiente
 
 Variáveis de ambiente relevantes:
-  LLM_BACKEND   = "mock" | "ollama" | "openai"   (padrão: auto-detect)
-  LLM_MODEL     = nome do modelo (ex: "llama3.2", "gpt-4o-mini")
+  LLM_BACKEND     = "mock" | "ollama" | "openai"   (padrão: auto-detect)
+  LLM_MODEL       = nome do modelo (ex: "llama3.2", "gpt-4o-mini")
+  OLLAMA_BASE_URL = URL base do Ollama (padrão: http://localhost:11434)
   OPENAI_BASE_URL = URL base da API compatível com OpenAI
   OPENAI_API_KEY  = chave de API
 """
@@ -39,16 +40,21 @@ def format_prompt(query: str, context: str) -> str:
 
 # ── Auto-detect backend ────────────────────────────────────────────────────────
 
+def _ollama_url() -> str:
+    """Retorna a URL base do Ollama, configurável via OLLAMA_BASE_URL."""
+    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
+
 def _detect_backend() -> str:
     """Retorna o backend disponível: 'mock', 'ollama' ou 'openai'."""
     override = os.getenv("LLM_BACKEND", "").lower()
     if override in ("mock", "ollama", "openai"):
         return override
 
-    # Tenta Ollama
+    # Tenta Ollama (usa URL configurada)
     try:
         import urllib.request
-        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1)
+        urllib.request.urlopen(f"{_ollama_url()}/api/tags", timeout=1)
         return "ollama"
     except Exception:
         pass
@@ -80,27 +86,32 @@ def _call_mock(prompt: str, context_chunks: list[str]) -> str:
 
 
 def _call_ollama(prompt: str, model: Optional[str] = None) -> str:
-    """Envia prompt ao Ollama local."""
+    """Envia prompt ao Ollama. URL configurável via OLLAMA_BASE_URL."""
     import json
     import urllib.request
 
-    model = model or os.getenv("LLM_MODEL", "llama3.2")
+    model   = model or os.getenv("LLM_MODEL", "llama3.2")
+    url     = f"{_ollama_url()}/api/generate"
     payload = json.dumps({
         "model":  model,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.1, "num_predict": 256},
+        "options": {"temperature": 0.1, "num_predict": 512},
     }).encode()
 
     req = urllib.request.Request(
-        "http://localhost:11434/api/generate",
+        url,
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:
         data = json.loads(r.read())
-    return data.get("response", "").strip()
+
+    response = data.get("response", "").strip()
+    if not response:
+        raise ValueError(f"Ollama retornou resposta vazia. Modelo: {model}. URL: {url}")
+    return response
 
 
 def _call_openai(prompt: str, model: Optional[str] = None) -> str:
